@@ -9,6 +9,9 @@ on:
     - cron: "0 8,10,12,14,16 * * 1-5"
   workflow_dispatch: {} # allow manual triggering from the GitHub Actions UI
 
+permissions:
+  contents: write # the default GITHUB_TOKEN is read-only otherwise; needed to push data/live_samples.csv back
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
