@@ -187,6 +187,15 @@ pytest -v
   - At least one SIGA location record has latitude/longitude transposed
     (Barreiro) — `pipeline/reconcile_siga_branches.py` sanity-bounds
     coordinates against a Portugal bounding box before trusting them.
+  - `tempoRealEspera` is sometimes wildly implausible — found 2026-07-27,
+    46% of "open" readings from one scheduled scrape showed 180-13,366
+    minutes, uncorrelated with the actual `utentesEmEspera` count (many
+    showed 0 people waiting alongside a 5-figure "wait"). Every reading's
+    untouched value is kept in `raw_wait_time_minutes`; `estimated_wait_minutes`
+    (the field training/API actually read) is filtered to
+    `config.REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES` (480 min = one business
+    day). Nothing is lost — just not trusted by default until the pattern
+    is understood.
 - **Weather**: Open-Meteo Forecast API (rainfall `rain_mm`) by branch
   coordinates. Its `start_date`/`end_date` params only cover roughly the last
   ~110 days plus forecast — for training rows older than that (most of our

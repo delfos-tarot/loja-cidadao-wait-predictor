@@ -196,6 +196,21 @@ SURGE_CLOSED_LABEL = "closed"
 # this window, people_waiting falls back to baseline instead.
 NEAR_NOW_WINDOW_MINUTES = 60
 
+# Real SIGA `tempoRealEspera` readings are sometimes wildly implausible —
+# found 2026-07-27: 46% of "open" readings from one scheduled scrape showed
+# 180-13,366 minutes, uncorrelated with the actual people_waiting count (many
+# showed 0 people waiting alongside a 5-figure "wait"). Working hypothesis:
+# the field may reflect elapsed idle time since the counter was last used,
+# not a live computed wait — unconfirmed. A real physical queue cannot
+# outlast a single business day before the branch closes and tickets reset,
+# so anything above this is treated as implausible and excluded from the
+# `estimated_wait_minutes` field used by training/API — but the untouched
+# raw value is always kept in `raw_wait_time_minutes` so this can still be
+# investigated later without having lost the original signal. Deliberately
+# not reusing MAX_DERIVED_WAIT_MINUTES (180) here — that number was chosen
+# for a synthetic queueing formula's assumptions, not a real-world constraint.
+REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES = 480
+
 # --------------------------------------------------------------------------
 # Wait-time proxy derivation (pipeline/demand_baseline.py)
 #

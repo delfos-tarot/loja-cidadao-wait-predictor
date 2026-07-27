@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS queue_samples (
     last_ticket_called TEXT,
     wait_time_minutes REAL,
     source TEXT NOT NULL DEFAULT 'siga_live',
-    is_open INTEGER
+    is_open INTEGER,
+    raw_wait_time_minutes REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_samples_lookup
@@ -49,6 +50,12 @@ def init_db(db_path: str) -> None:
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as connection:
         connection.executescript(SCHEMA)
+        # CREATE TABLE IF NOT EXISTS doesn't add columns to an already-existing
+        # table from an older schema version — migrate existing DBs in place.
+        try:
+            connection.execute("ALTER TABLE queue_samples ADD COLUMN raw_wait_time_minutes REAL")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 @contextmanager
@@ -89,8 +96,8 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
         """
         INSERT INTO queue_samples
             (branch_id, desk_service_id, sampled_at, people_waiting,
-             last_ticket_called, wait_time_minutes, source, is_open)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             last_ticket_called, wait_time_minutes, source, is_open, raw_wait_time_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             reading.branch_id,
@@ -101,6 +108,7 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
             reading.estimated_wait_minutes,
             reading.source,
             None if reading.is_open is None else int(reading.is_open),
+            reading.raw_wait_time_minutes,
         ),
     )
 

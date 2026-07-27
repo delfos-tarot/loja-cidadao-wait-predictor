@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 
+import pandas as pd
+
+from config import REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES
 from pipeline.db import load_all_samples
 from pipeline.import_live_samples import import_live_samples
 from scrapers.siga_scraper import append_readings_to_csv
@@ -71,3 +75,30 @@ def test_import_live_samples_appends_incrementally(tmp_path) -> None:
     assert skipped == 1  # the first row, already present
     frame = load_all_samples(db_path)
     assert len(frame) == 2
+
+
+def test_import_retroactively_cleans_old_format_csv_without_raw_column(tmp_path) -> None:
+    """Pre-migration CSVs (like the ones already committed to the repo
+    before raw_wait_time_minutes existed) have no such column, and their
+    estimated_wait_minutes was never plausibility-filtered. Importing one
+    must derive raw_wait_time_minutes from the old value and null out
+    estimated_wait_minutes if it's implausible -- not just pass the garbage
+    straight through because the column was missing.
+    """
+    csv_path = str(tmp_path / "old_format_live_samples.csv")
+    db_path = str(tmp_path / "queue_history.db")
+    implausible = REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES + 5000
+    now = datetime.now(timezone.utc)
+
+    Path(csv_path).write_text(
+        "branch_id,desk_service_id,sampled_at,people_waiting,last_ticket_called,estimated_wait_minutes,source,is_open\n"
+        f"branch_a,Atendimento Geral,{now.isoformat()},0,,{implausible},siga_live,True\n"
+    )
+
+    imported, skipped = import_live_samples(csv_path, db_path)
+
+    assert imported == 1
+    assert skipped == 0
+    frame = load_all_samples(db_path)
+    assert pd.isna(frame.iloc[0]["wait_time_minutes"])
+    assert frame.iloc[0]["raw_wait_time_minutes"] == implausible

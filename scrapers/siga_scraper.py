@@ -25,6 +25,14 @@ pipeline/train.py's per-combo proxy-decay weighting won't fully kick in for
 those services until a service-name reconciliation step is built (analogous
 to pipeline/reconcile_siga_branches.py, not done yet for services).
 
+KNOWN DATA QUALITY ISSUE: real `tempoRealEspera` readings are sometimes
+wildly implausible — found 2026-07-27, 46% of "open" readings from one
+scheduled scrape showed 180-13,366 minutes, uncorrelated with the actual
+people_waiting count. See config.REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES for the
+full writeup. `estimated_wait_minutes` is filtered to plausible values only;
+the untouched value is always kept in `raw_wait_time_minutes` for later
+investigation.
+
 Usage:
     python -m scrapers.siga_scraper --once
     python -m scrapers.siga_scraper                 # loops forever, every 15 min
@@ -40,7 +48,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import DEFAULT_DB_PATH
+from config import DEFAULT_DB_PATH, REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES
 from pipeline.db import get_connection, insert_queue_samples
 from pipeline.siga_client import SigaClient
 from schemas import QueueReading
@@ -57,6 +65,7 @@ CLOSED_STATE = "FECHADO"  # the only state string actually confirmed by testing
 CSV_FIELDS = [
     "branch_id", "desk_service_id", "sampled_at", "people_waiting",
     "last_ticket_called", "estimated_wait_minutes", "source", "is_open",
+    "raw_wait_time_minutes",
 ]
 
 
@@ -122,6 +131,18 @@ def poll_once(
             servico = location.get("servico", {})
             is_open = servico.get("estado") != CLOSED_STATE
 
+            raw_wait_minutes = servico.get("tempoRealEspera") if is_open else None
+            # See module + config docstrings: real tempoRealEspera readings
+            # are sometimes wildly implausible (up to 13,366 minutes seen,
+            # uncorrelated with actual queue size). raw_wait_minutes always
+            # keeps the untouched value; estimated_wait_minutes is the
+            # filtered one every other consumer (training, API) reads.
+            plausible_wait_minutes = (
+                raw_wait_minutes
+                if raw_wait_minutes is not None and raw_wait_minutes <= REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES
+                else None
+            )
+
             readings.append(
                 QueueReading(
                     branch_id=branch_id,
@@ -129,9 +150,10 @@ def poll_once(
                     sampled_at=sampled_at,
                     people_waiting=servico.get("utentesEmEspera") if is_open else None,
                     last_ticket_called=None,
-                    estimated_wait_minutes=servico.get("tempoRealEspera") if is_open else None,
+                    estimated_wait_minutes=plausible_wait_minutes,
                     source="siga_live",
                     is_open=is_open,
+                    raw_wait_time_minutes=raw_wait_minutes,
                 )
             )
 
@@ -169,6 +191,7 @@ def append_readings_to_csv(readings: list[QueueReading], csv_path: str = LIVE_SA
                     "estimated_wait_minutes": reading.estimated_wait_minutes,
                     "source": reading.source,
                     "is_open": reading.is_open,
+                    "raw_wait_time_minutes": reading.raw_wait_time_minutes,
                 }
             )
     return len(readings)
