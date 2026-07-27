@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated data & model artifacts
+# queue_history.db is 400MB+ (dominated by proxy rows) and gitignored on
+# purpose — GitHub hard-rejects files over 100MB, and a binary SQLite blob
+# re-committed on every scrape would bloat history badly regardless. Real
+# live samples collected by CI go through data/live_samples.csv instead
+# (small, text, git-friendly) — see scrapers/siga_scraper.py --csv-out and
+# pipeline/import_live_samples.py.
+data/queue_history.db
+data/.weather_cache*
+data/historical_raw/
+models/*.joblib
+
+# Keep folder placeholders
+!data/historical_raw/.gitkeep

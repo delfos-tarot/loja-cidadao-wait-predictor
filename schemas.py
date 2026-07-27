@@ -1,0 +1,18 @@
+"""Shared dataclasses used across scrapers, pipeline, and API layers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class QueueReading:
+    branch_id: str
+    desk_service_id: str
+    sampled_at: datetime
+    people_waiting: int | None
+    last_ticket_called: str | None
+    estimated_wait_minutes: float | None
+    source: str = "siga_live"
+    is_open: bool | None = None

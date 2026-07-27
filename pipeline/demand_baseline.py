@@ -1,0 +1,222 @@
+"""Two derived uses of the real dados.gov.pt attendance dataset
+(data/cleaned_historical_baseline.parquet, built by pipeline/load_historical.py):
+
+1. A historical demand-baseline feature: real average daily attendances by
+   (branch, service, day_of_week), persisted to the `historical_demand_baseline`
+   SQLite table and consumed by pipeline/feature_engineering.py as the
+   `historical_avg_attendances` feature.
+2. A grounded (not invented-from-scratch) wait-time PROXY label, derived from
+   real attendance volume via a documented queueing approximation, inserted
+   into `queue_samples` tagged source='historical_derived_proxy' — distinct
+   from 'siga_live' (real measured wait times, once live scraping runs) and
+   'synthetic_bootstrap' (fully synthetic demo data with no real grounding).
+
+WAIT-TIME PROXY FORMULA (documented assumptions, not measured ground truth):
+    utilization = (attendances * avg_service_minutes) / (desks * operating_hours * 60)
+    wait_minutes = avg_service_minutes * utilization / (1 - utilization)   [M/M/1 Wq]
+    capped at config.MAX_DERIVED_WAIT_MINUTES once utilization saturates.
+Assumes config.DEFAULT_DESKS_PER_SERVICE parallel desks — an unverified
+simplification, since the real dataset has no desk-count field.
+
+Each day's total is expanded into config.DIURNAL_SNAPSHOTS representative
+daypart snapshots rather than one flat noon timestamp, so the proxy rows
+carry real hour_of_day variance. Each snapshot's wait estimate uses
+config.SNAPSHOT_WINDOW_HOURS (~1 hour) as the M/M/1 capacity window, not the
+full operating day, since a snapshot represents an hour-scale slice of
+demand — reusing the full day's capacity there would make every snapshot
+look far under capacity and erase the variance this expansion is for.
+
+Replace these bootstrap rows with real siga_live measurements as soon as live
+polling has accumulated enough history; pipeline/train.py downweights proxy
+rows per-(branch, service) as real coverage grows for that combo.
+
+Usage:
+    python -m pipeline.demand_baseline
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import math
+import sqlite3
+
+import pandas as pd
+
+from config import (
+    BRANCHES,
+    DEFAULT_DB_PATH,
+    DEFAULT_DESKS_PER_SERVICE,
+    DEFAULT_SERVICE_AVG_MINUTES,
+    DIURNAL_SNAPSHOTS,
+    MAX_DERIVED_WAIT_MINUTES,
+    OPERATING_HOURS_PER_DAY,
+    SERVICE_AVG_MINUTES,
+    SNAPSHOT_WINDOW_HOURS,
+    TARGET_DESK_UTILIZATION,
+)
+from pipeline.db import get_connection, init_db, insert_queue_samples, upsert_branch
+from pipeline.geocode_branches import slugify
+from schemas import QueueReading
+
+logger = logging.getLogger(__name__)
+
+CLEANED_BASELINE_PATH = "data/cleaned_historical_baseline.parquet"
+
+DEMAND_BASELINE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS historical_demand_baseline (
+    branch_id TEXT NOT NULL,
+    desk_service_id TEXT NOT NULL,
+    day_of_week INTEGER NOT NULL,
+    avg_attendances REAL NOT NULL,
+    PRIMARY KEY (branch_id, desk_service_id, day_of_week)
+);
+"""
+
+
+def estimate_wait_minutes_from_attendances(
+    total_attendances: float,
+    avg_service_minutes: float,
+    desks: int = DEFAULT_DESKS_PER_SERVICE,
+    operating_hours: float = OPERATING_HOURS_PER_DAY,
+    max_wait_minutes: float = MAX_DERIVED_WAIT_MINUTES,
+) -> float:
+    """M/M/1-style waiting-time approximation from an attendance count over
+    the given `operating_hours` window. See module docstring for the
+    assumptions this rests on. `operating_hours` must match the time window
+    `total_attendances` actually represents — passing a full day's count with
+    an hour-scale window (or vice versa) will badly over/under-state
+    utilization and silently produce meaningless wait times.
+    """
+    if total_attendances <= 0:
+        return 0.0
+    capacity_minutes = operating_hours * 60 * desks
+    demand_minutes = total_attendances * avg_service_minutes
+    utilization = demand_minutes / capacity_minutes
+    if utilization >= 0.98:
+        return max_wait_minutes
+    wait = avg_service_minutes * utilization / (1 - utilization)
+    return round(min(wait, max_wait_minutes), 1)
+
+
+def estimate_desks_for_volume(
+    daily_attendance: float,
+    avg_service_minutes: float,
+    desks_baseline: int = DEFAULT_DESKS_PER_SERVICE,
+    target_utilization: float = TARGET_DESK_UTILIZATION,
+    operating_hours: float = OPERATING_HOURS_PER_DAY,
+) -> int:
+    """Scales the assumed desk count with real attendance volume and this
+    service's own average ticket duration, instead of one flat constant for
+    every service at every branch regardless of scale. Still a documented
+    approximation (no real desk-count data exists for any branch), but a
+    flat DEFAULT_DESKS_PER_SERVICE badly understates capacity for the
+    handful of extreme-volume real combos (some branch/service pairs exceed
+    900 attendances/day), producing implausible wait-time proxies for
+    exactly those rows. desks_baseline is used as a floor, not a ceiling.
+    """
+    sustainable_capacity_per_desk = (operating_hours * 60 / avg_service_minutes) * target_utilization
+    volume_implied_desks = math.ceil(daily_attendance / sustainable_capacity_per_desk)
+    return max(desks_baseline, volume_implied_desks)
+
+
+def load_cleaned_baseline(path: str = CLEANED_BASELINE_PATH) -> pd.DataFrame:
+    frame = pd.read_parquet(path)
+    # Same slugify() used by pipeline/geocode_branches.py, so store_name here
+    # always lines up with config.BRANCHES_BY_ID keys.
+    frame["branch_id"] = frame["store_name"].apply(slugify)
+    return frame
+
+
+def build_demand_baseline_table(frame: pd.DataFrame) -> pd.DataFrame:
+    working = frame.copy()
+    working["day_of_week"] = pd.to_datetime(working["date"]).dt.dayofweek
+    aggregated = (
+        working.groupby(["branch_id", "service_type", "day_of_week"])["total_attendances"]
+        .mean()
+        .reset_index()
+        .rename(columns={"service_type": "desk_service_id", "total_attendances": "avg_attendances"})
+    )
+    return aggregated
+
+
+def save_demand_baseline(aggregated: pd.DataFrame, db_path: str = DEFAULT_DB_PATH) -> int:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(DEMAND_BASELINE_SCHEMA)
+        connection.execute("DELETE FROM historical_demand_baseline")
+        aggregated.to_sql("historical_demand_baseline", connection, if_exists="append", index=False)
+        connection.commit()
+    return len(aggregated)
+
+
+def derive_proxy_readings(frame: pd.DataFrame) -> list[QueueReading]:
+    """Expands each daily attendance total into config.DIURNAL_SNAPSHOTS
+    representative daypart snapshots, each with its own wait-time estimate
+    computed over an hour-scale (config.SNAPSHOT_WINDOW_HOURS) capacity
+    window — not the full day's capacity, which would understate every
+    snapshot's utilization and erase the hour-of-day variance this expansion
+    exists to provide. `people_waiting` is populated with the same derived
+    per-slot estimate (not a real headcount) so the model has a non-constant
+    people_waiting signal to learn from ahead of real siga_live data.
+    """
+    readings: list[QueueReading] = []
+    for row in frame.itertuples(index=False):
+        avg_service_minutes = SERVICE_AVG_MINUTES.get(row.service_type, DEFAULT_SERVICE_AVG_MINUTES)
+        avg_hourly_attendance = row.total_attendances / OPERATING_HOURS_PER_DAY
+        desks = estimate_desks_for_volume(row.total_attendances, avg_service_minutes)
+
+        for hour, minute, volume_factor in DIURNAL_SNAPSHOTS:
+            people_this_slot = avg_hourly_attendance * volume_factor
+            wait_minutes = estimate_wait_minutes_from_attendances(
+                people_this_slot, avg_service_minutes, desks=desks, operating_hours=SNAPSHOT_WINDOW_HOURS
+            )
+            sampled_at = pd.Timestamp(row.date).replace(hour=hour, minute=minute).tz_localize("UTC")
+            readings.append(
+                QueueReading(
+                    branch_id=row.branch_id,
+                    desk_service_id=row.service_type,
+                    sampled_at=sampled_at.to_pydatetime(),
+                    people_waiting=round(people_this_slot),
+                    last_ticket_called=None,
+                    estimated_wait_minutes=wait_minutes,
+                    source="historical_derived_proxy",
+                    # Grounded in real evidence, not the Mon-Fri/9-17 heuristic:
+                    # dados.gov.pt recorded actual attendance this day, which
+                    # is direct proof the branch was open — including the
+                    # ~15.7k real Saturday rows (437k real attendances) this
+                    # dataset contains, which a fixed Mon-Fri assumption would
+                    # incorrectly mark closed.
+                    is_open=True,
+                )
+            )
+    return readings
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Derive demand-baseline features and proxy wait-time labels from real attendance data"
+    )
+    parser.add_argument("--baseline", default=CLEANED_BASELINE_PATH)
+    parser.add_argument("--db", default=DEFAULT_DB_PATH)
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    frame = load_cleaned_baseline(args.baseline)
+    logger.info("Loaded %d cleaned historical rows for %d branches", len(frame), frame["branch_id"].nunique())
+
+    demand_baseline = build_demand_baseline_table(frame)
+    stored_baseline_rows = save_demand_baseline(demand_baseline, args.db)
+    logger.info("Saved %d demand-baseline rows to historical_demand_baseline", stored_baseline_rows)
+
+    readings = derive_proxy_readings(frame)
+    with get_connection(args.db) as connection:
+        for branch in BRANCHES:
+            upsert_branch(connection, branch.branch_id, branch.name, branch.district, branch.latitude, branch.longitude)
+        stored_readings = insert_queue_samples(connection, readings)
+    logger.info("Inserted %d historical_derived_proxy rows into queue_samples", stored_readings)
+
+
+if __name__ == "__main__":
+    main()

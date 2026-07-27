@@ -1,0 +1,392 @@
+{
+  "Loja de Cidadão da Anadia|Anadia|Aveiro": {
+    "latitude": 40.4426833,
+    "longitude": -8.4359581,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão da Batalha|Batalha|Leiria": {
+    "latitude": 39.6578998,
+    "longitude": -8.8243713,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão da Guarda|Guarda|Guarda": {
+    "latitude": 40.5378408,
+    "longitude": -7.2662964,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão das Laranjeiras|Lisboa|Lisboa": {
+    "latitude": 38.7077507,
+    "longitude": -9.1365919,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Abrantes|Abrantes|Santarém": {
+    "latitude": 39.4630269,
+    "longitude": -8.1975227,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Aguiar da Beira|Aguiar Da Beira|Guarda": {
+    "latitude": 40.81718,
+    "longitude": -7.54312,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Alijó|Alijó|Vila Real": {
+    "latitude": 41.2769938,
+    "longitude": -7.4744405,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Alvaiázere|Alvaiázere|Leiria": {
+    "latitude": 39.8161333,
+    "longitude": -8.4020506,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Amares|Amares|Braga": {
+    "latitude": 41.6305207,
+    "longitude": -8.3562986,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Ansião|Ansião|Leiria": {
+    "latitude": 39.9123028,
+    "longitude": -8.4357419,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Arruda dos Vinhos|Arruda Dos Vinhos|Lisboa": {
+    "latitude": 38.98303,
+    "longitude": -9.07763,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Aveiro|Aveiro|Aveiro": {
+    "latitude": 40.638955,
+    "longitude": -8.6395106,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Belmonte|Belmonte|Castelo Branco": {
+    "latitude": 40.3583264,
+    "longitude": -7.3512742,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Borba|Borba|Évora": {
+    "latitude": 38.8057942,
+    "longitude": -7.4542105,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Braga|Braga|Braga": {
+    "latitude": 41.5477431,
+    "longitude": -8.4221996,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Campo Maior|Campo Maior|Portalegre": {
+    "latitude": 39.0125063,
+    "longitude": -7.0692822,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Cantanhede|Cantanhede|Coimbra": {
+    "latitude": 40.3473066,
+    "longitude": -8.5903255,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Carregal do Sal|Carregal Do Sal|Viseu": {
+    "latitude": 40.4334074,
+    "longitude": -8.0030203,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Cascais|Cascais|Lisboa": {
+    "latitude": 38.6968919,
+    "longitude": -9.4204495,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Castelo Branco|Castelo Branco|Castelo Branco": {
+    "latitude": 39.8266322,
+    "longitude": -7.4919318,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Castelo de Paiva|Castelo de Paiva|Aveiro": {
+    "latitude": 41.041577,
+    "longitude": -8.2703271,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Coimbra|Coimbra|Coimbra": {
+    "latitude": 40.2113795,
+    "longitude": -8.4324108,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Esmoriz|Ovar|Aveiro": {
+    "latitude": 40.8594819,
+    "longitude": -8.6252174,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Faro|Faro|Faro": {
+    "latitude": 37.0198556,
+    "longitude": -7.9286644,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Felgueiras|Felgueiras|Porto": {
+    "latitude": 41.3648572,
+    "longitude": -8.1989013,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Freixo de Espada à Cinta|Freixo De Espada À Cinta|Bragança": {
+    "latitude": 41.0913764,
+    "longitude": -6.8078692,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Gondomar|Gondomar|Porto": {
+    "latitude": 41.1398199,
+    "longitude": -8.5326269,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Leiria|Leiria|Leiria": {
+    "latitude": 39.9123028,
+    "longitude": -8.4357419,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Mafra|Mafra|Lisboa": {
+    "latitude": 38.9369782,
+    "longitude": -9.3282374,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Marvila|Lisboa|Lisboa": {
+    "latitude": 38.7499399,
+    "longitude": -9.1168394,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Mação|Mação|Santarém": {
+    "latitude": 39.554608,
+    "longitude": -7.9957035,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Montalegre|Montalegre|Vila Real": {
+    "latitude": 41.8232206,
+    "longitude": -7.7923142,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Murça|Murça|Vila real": {
+    "latitude": 41.4259146,
+    "longitude": -7.4655695,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Mêda|Mêda|Guarda": {
+    "latitude": 40.930394,
+    "longitude": -7.2517584,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Nelas|Nelas|Viseu": {
+    "latitude": 40.5299888,
+    "longitude": -7.8550987,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Odivelas|Odivelas|Lisboa": {
+    "latitude": 38.7904338,
+    "longitude": -9.1792617,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Oliveira de Frades|Oliveira De Frades|Viseu": {
+    "latitude": 40.7322108,
+    "longitude": -8.1739059,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Palmela Móvel|Palmela|Setúbal": {
+    "latitude": 38.569601,
+    "longitude": -8.9011653,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Penafiel|Penafiel|Porto": {
+    "latitude": 41.2061892,
+    "longitude": -8.2855653,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Penalva do Castelo|Penalva Do Castelo|Viseu": {
+    "latitude": 40.67436,
+    "longitude": -7.69997,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Pinhal Novo|Setúbal|Setúbal": {
+    "latitude": 38.5241783,
+    "longitude": -8.8932341,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Pombal|Pombal|Leiria": {
+    "latitude": 39.9161851,
+    "longitude": -8.6279171,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Ponte da Barca|Ponte Da Barca|Viana do Castelo": {
+    "latitude": 41.8056758,
+    "longitude": -8.322703,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Queluz|Sintra|Lisboa": {
+    "latitude": 38.8355446,
+    "longitude": -9.3522371,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Resende|Resende|Viseu": {
+    "latitude": 41.0749752,
+    "longitude": -7.9506309,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Ribeira de Pena|Ribeira De Pena|Vila Real": {
+    "latitude": 41.5217103,
+    "longitude": -7.795143,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Rio Maior|Rio Maior|Santarém": {
+    "latitude": 39.3365387,
+    "longitude": -8.9364098,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Santarém|Santarém|Santarém": {
+    "latitude": 39.2294807,
+    "longitude": -8.6869405,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Santiago do Cacém|Santiago Do Cacém|Setúbal": {
+    "latitude": 38.018461,
+    "longitude": -8.6937882,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Santo Tirso|Santo Tirso|Porto": {
+    "latitude": 41.3440057,
+    "longitude": -8.4772021,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Serpa|Serpa|Beja": {
+    "latitude": 37.9436517,
+    "longitude": -7.5966902,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Setúbal|Setúbal|Setúbal": {
+    "latitude": 38.661864,
+    "longitude": -9.0739284,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Sátão|Sátão|Viseu": {
+    "latitude": 40.7410973,
+    "longitude": -7.7360966,
+    "precision": "store"
+  },
+  "Loja de Cidadão de São João da Madeira|São João da Madeira|Aveiro": {
+    "latitude": 40.8972089,
+    "longitude": -8.4886108,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Tarouca|Tarouca|Viseu": {
+    "latitude": 41.01624,
+    "longitude": -7.7752378,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Tavira|Tavira|Faro": {
+    "latitude": 37.1262493,
+    "longitude": -7.6499121,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Torres Novas|Torres Novas|Santarém": {
+    "latitude": 39.4814277,
+    "longitude": -8.5369951,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Torres Vedras|Torres Vedras|Lisboa": {
+    "latitude": 39.0930856,
+    "longitude": -9.260741,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Valongo|Valongo|Porto": {
+    "latitude": 41.2133448,
+    "longitude": -8.5457579,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Valpaços|Valpaços|Vila Real": {
+    "latitude": 41.6088215,
+    "longitude": -7.3088009,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Vila Franca de Xira|Vila Franca De Xira|Lisboa": {
+    "latitude": 38.9120642,
+    "longitude": -8.9889234,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Vila Nova da Barquinha|Vila Nova Da Barquinha|Santarém": {
+    "latitude": 39.4840045,
+    "longitude": -8.4299397,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Vila Nova de Famalicão|Vila Nova De Famalicão|Braga": {
+    "latitude": 41.4064621,
+    "longitude": -8.5187849,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Vila Nova de Gaia|Vila Nova De Gaia|Porto": {
+    "latitude": 41.1417907,
+    "longitude": -8.6376691,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Vila Pouca Aguiar|Vila Pouca De Aguiar|Vila Real": {
+    "latitude": 41.4987711,
+    "longitude": -7.6436933,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Vila Real|Vila Real|Vila Real": {
+    "latitude": 41.2968536,
+    "longitude": -7.7447683,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Vila Velha de Ródão|Vila Velha De Ródão|Castelo Branco": {
+    "latitude": 39.6545418,
+    "longitude": -7.6723114,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Vila de Rei|Vila De Rei|Castelo Branco": {
+    "latitude": 39.6759822,
+    "longitude": -8.1442213,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão de Viseu|Viseu|Viseu": {
+    "latitude": 40.7410973,
+    "longitude": -7.7360966,
+    "precision": "store"
+  },
+  "Loja de Cidadão de Águeda|Águeda|Aveiro": {
+    "latitude": 40.5756578,
+    "longitude": -8.4469348,
+    "precision": "store"
+  },
+  "Loja de Cidadão do Barreiro|Barreiro|Setúbal": {
+    "latitude": 38.661864,
+    "longitude": -9.0739284,
+    "precision": "store"
+  },
+  "Loja de Cidadão do Bombarral|Bombarral|Leiria": {
+    "latitude": 39.2670652,
+    "longitude": -9.1584324,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão do Cacém|Sintra|Lisboa": {
+    "latitude": 38.8355446,
+    "longitude": -9.3522371,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão do Porto|Porto|Porto": {
+    "latitude": 41.1417907,
+    "longitude": -8.6376691,
+    "precision": "store"
+  },
+  "Loja de Cidadão do Saldanha|Lisboa|Lisboa": {
+    "latitude": 38.7311467,
+    "longitude": -9.14439,
+    "precision": "store"
+  },
+  "Loja de Cidadão do Sardoal|Sardoal|Santarém": {
+    "latitude": 39.53347,
+    "longitude": -8.16034,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão do Seixal|Seixal|Setúbal": {
+    "latitude": 38.6422246,
+    "longitude": -9.1072662,
+    "precision": "municipality"
+  },
+  "Loja de Cidadão do Vimioso|Vimioso|Bragança": {
+    "latitude": 41.5849534,
+    "longitude": -6.5291002,
+    "precision": "municipality"
+  }
+}

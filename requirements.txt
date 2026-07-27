@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pandas
+xgboost
+scikit-learn
+joblib
+requests
+openmeteo-requests
+requests-cache
+retry-requests
+openpyxl
+pyarrow
+pytest
+httpx
