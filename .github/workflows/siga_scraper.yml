@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write # the default GITHUB_TOKEN is read-only otherwise; needed to push data/live_samples.csv back
+  issues: write # needed to auto-file an issue if a run fails, so failures are visible without relying on email
 
 jobs:
   scrape:
@@ -38,3 +39,21 @@ jobs:
           git add data/live_samples.csv
           git diff --cached --quiet && echo "No new rows" || git commit -m "Live SIGA samples $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push
+
+      # Runs only if any prior step failed. Files (or reuses) one open issue
+      # rather than a fresh one per failure, so repeated failures don't spam
+      # the repo -- this is the durable, hard-to-miss signal for "come back
+      # in weeks and check" cadences, since email notifications are easy to
+      # miss or have disabled.
+      - name: File an issue if this run failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" --label scraper-failure --state open --json number --jq '.[0].number')
+          BODY="Run [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) failed at $(date -u +%Y-%m-%dT%H:%M:%SZ). Check the SIGA site hasn't changed shape (see pipeline/siga_client.py's docstring for what 'working' looks like)."
+          if [ -z "$EXISTING" ]; then
+            gh issue create --repo "${{ github.repository }}" --title "Scraper workflow failing" --label scraper-failure --body "$BODY"
+          else
+            gh issue comment "$EXISTING" --repo "${{ github.repository }}" --body "$BODY"
+          fi
