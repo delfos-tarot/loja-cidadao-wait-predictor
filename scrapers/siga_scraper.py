@@ -160,6 +160,44 @@ def poll_once(
     return _dedupe_readings(readings)
 
 
+def _migrate_csv_header_if_needed(path: Path) -> None:
+    """Rewrites the CSV in place if its on-disk header predates CSV_FIELDS.
+
+    Found 2026-07-28: `raw_wait_time_minutes` was appended to CSV_FIELDS
+    after live_samples.csv already existed with an 8-column header. The
+    header is only ever written for a brand-new file, so every row written
+    since then silently carried 9 fields under an 8-field header --
+    corrupting the file for any strict reader (pandas.read_csv errors
+    outright on the field-count mismatch; found via import_live_samples).
+    Existing short rows are padded with '' for the new trailing column(s)
+    rather than dropped, matching how other optional fields (e.g.
+    last_ticket_called) already represent "not captured" as blank.
+    """
+    if not path.exists():
+        return
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        rows = list(csv.reader(handle))
+    if not rows or rows[0] == CSV_FIELDS:
+        return
+    old_header = rows[0]
+    if not set(old_header).issubset(CSV_FIELDS):
+        raise SystemExit(
+            f"{path} header {old_header} has fields not in current CSV_FIELDS "
+            f"{CSV_FIELDS} -- this isn't a pure append, needs a manual fix"
+        )
+    width = len(old_header)
+    fixed_rows = [CSV_FIELDS]
+    for row in rows[1:]:
+        if len(row) == len(CSV_FIELDS):
+            fixed_rows.append(row)
+        elif len(row) == width:
+            fixed_rows.append(row + [""] * (len(CSV_FIELDS) - width))
+        else:
+            raise SystemExit(f"{path} has a row with unexpected field count {len(row)}: {row}")
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        csv.writer(handle).writerows(fixed_rows)
+
+
 def append_readings_to_csv(readings: list[QueueReading], csv_path: str = LIVE_SAMPLES_CSV_PATH) -> int:
     """Appends readings to a plain CSV rather than the main SQLite DB.
 
@@ -174,6 +212,7 @@ def append_readings_to_csv(readings: list[QueueReading], csv_path: str = LIVE_SA
     """
     path = Path(csv_path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    _migrate_csv_header_if_needed(path)
     file_exists = path.exists()
 
     with path.open("a", newline="", encoding="utf-8") as handle:
