@@ -2,7 +2,7 @@ name: Scraper watchdog
 
 on:
   schedule:
-    # Every 15 min, weekday business hours -- deliberately much more
+    # Every 15 min, Mon-Sat business hours -- deliberately much more
     # frequent than siga_scraper.yml's own 2-hour slots. GitHub's own docs
     # say the `schedule` trigger can be delayed *or silently dropped* under
     # high load, with no error to catch (see siga_scraper.yml's comments and
@@ -11,7 +11,12 @@ on:
     # 15-min schedule means many more independent chances for at least one
     # tick to get through and notice the gap, rather than hoping a handful
     # of fixed-time crons individually dodge the same congestion window.
-    - cron: "*/15 7-17 * * 1-5"
+    #
+    # Saturday (day 6) added 2026-07-28: cleaned_historical_baseline.parquet
+    # shows real, nonzero Saturday attendance (~672K vs Sunday's exactly 0)
+    # -- Sunday intentionally excluded since there's no evidence branches
+    # are ever open then.
+    - cron: "*/15 7-17 * * 1-6"
   workflow_dispatch: {}
 
 permissions:
@@ -47,11 +52,17 @@ jobs:
             AGE_MIN=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 ))
             echo "Last run started $AGE_MIN min ago (at $LATEST_CREATED)."
 
-            # Real slots are ~120 min apart. 100 min gives each slot a
-            # generous window to fire on its own before the watchdog steps
-            # in, while still catching a miss well within the same slot's
-            # opening/midday/afternoon intent rather than hours later.
-            if [ "$AGE_MIN" -lt 100 ]; then
+            # Lowered from 100 to 20 min on 2026-07-28: with the push-race
+            # and CSV-corruption bugs both fixed the same day, there's no
+            # longer a reason to hold back -- coverage_report.py showed 0
+            # (branch, service) combos with >=30 real usable samples after
+            # 12 sweeps in ~42h at the old ~5-sweeps/weekday cadence (median
+            # combo projected ~7 weeks out). This turns the watchdog from a
+            # backstop into the primary driver, converging toward the
+            # scraper's own originally-designed POLL_INTERVAL_SECONDS
+            # (15 min) continuous-loop cadence rather than an arbitrary
+            # escalation -- roughly a 4-6x increase in sweeps/day.
+            if [ "$AGE_MIN" -lt 20 ]; then
               echo "Recent enough, nothing to do."
               exit 0
             fi

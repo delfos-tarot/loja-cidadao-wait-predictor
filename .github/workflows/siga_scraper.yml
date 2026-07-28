@@ -2,10 +2,10 @@ name: Poll live SIGA queue data
 
 on:
   schedule:
-    # ~08,10,12,14,16 UTC on weekdays ~= 09,11,13,15,17 WEST (Portugal summer
-    # time) or 08,10,12,14,16 WET (winter) — spans opening/midday/afternoon
-    # rather than one fixed hour, since real wait-time variance (not just
-    # sample count) is what makes this data useful. See CLAUDE.md.
+    # ~08,10,12,14,16 UTC ~= 09,11,13,15,17 WEST (Portugal summer time) or
+    # 08,10,12,14,16 WET (winter) — spans opening/midday/afternoon rather
+    # than one fixed hour, since real wait-time variance (not just sample
+    # count) is what makes this data useful. See CLAUDE.md.
     #
     # Minute offset to :17 (not :00) is deliberate: found 2026-07-27 that
     # only 3 of 5 scheduled runs fired on day one, each 24-99 min late.
@@ -14,7 +14,14 @@ on:
     # cron collides there), and scheduled runs can be delayed or dropped
     # under that load. Offsetting away from :00 doesn't guarantee on-time
     # firing, but avoids the specific congestion peak GitHub calls out.
-    - cron: "17 8,10,12,14,16 * * 1-5"
+    #
+    # Saturday (day 6) added 2026-07-28: cleaned_historical_baseline.parquet
+    # shows real, nonzero Saturday attendance (~672K vs Sunday's exactly 0)
+    # -- Sunday intentionally excluded since there's no evidence branches
+    # are ever open then. scraper_watchdog.yml (much denser, every 15 min)
+    # is now the primary driver of sweep frequency; these 5 slots remain as
+    # an independent redundant baseline.
+    - cron: "17 8,10,12,14,16 * * 1-6"
   workflow_dispatch: {} # allow manual triggering from the GitHub Actions UI
 
 permissions:
