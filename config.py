@@ -238,7 +238,7 @@ TARGET_DESK_UTILIZATION = 0.7
 #
 # The real dataset has no intra-day timestamp, so anchoring every daily
 # proxy row at one flat clock time would give `hour_of_day` zero variance
-# across the entire proxy dataset. Instead each day is expanded into a few
+# across the entire proxy dataset. Instead each day is expanded into
 # representative daypart snapshots: (hour, minute, volume_factor), where
 # volume_factor scales the day's average hourly attendance rate (factors
 # average to 1.0 across a "typical" day). Each snapshot's wait-time estimate
@@ -247,11 +247,25 @@ TARGET_DESK_UTILIZATION = 0.7
 # demand, not the whole day's total — reusing the full-day operating-hours
 # constant here would make capacity look ~8x too large and understate wait
 # times at every snapshot.
+#
+# Densified from 3 to 8 (one per business hour, 9:30-16:30, matching
+# OPERATING_HOURS_PER_DAY=8.0) on 2026-07-27: with only 3 anchors, a
+# same-week day-of-week ranking that was correct at 12:30 came out
+# scrambled at 10-11am on the identical branch/service — the model had
+# real support at exactly 3 clock times and was extrapolating everywhere
+# else. This is still a documented approximation, not measured ground
+# truth (a bell-ish ramp-up/peak/wind-down shape), just at finer
+# resolution than before.
 # --------------------------------------------------------------------------
 DIURNAL_SNAPSHOTS: tuple[tuple[int, int, float], ...] = (
-    (9, 30, 0.8),   # morning
-    (12, 30, 1.4),  # midday peak
-    (15, 30, 0.8),  # afternoon
+    (9, 30, 0.70),   # opening ramp-up
+    (10, 30, 0.85),
+    (11, 30, 1.00),
+    (12, 30, 1.35),  # midday peak
+    (13, 30, 1.35),  # midday peak continues
+    (14, 30, 1.10),
+    (15, 30, 0.85),
+    (16, 30, 0.80),  # closing wind-down
 )
 SNAPSHOT_WINDOW_HOURS = 1.0
 
@@ -269,3 +283,42 @@ SNAPSHOT_WINDOW_HOURS = 1.0
 # is a no-op until live data actually exists.
 # --------------------------------------------------------------------------
 PROXY_WEIGHT_DECAY_ALPHA = 0.05
+
+# --------------------------------------------------------------------------
+# historical_real_daily_avg reliability weighting (pipeline/train.py)
+#
+# IALC-M branch-day averages (pipeline/ingest_real_wait_times.py) are real
+# measurements, but some branch-days carry very low Total_Atendimentos
+# (occasionally 1 — see the SLC-M/IALC-M cross-check, 2026-07-27), making
+# that day's "average" a single noisy raw reading rather than a stable mean.
+# Each row's weight is sample_size / (sample_size + REFERENCE) — a smooth
+# 0->1 curve reaching 0.5 at REFERENCE attendances. 30 reuses the same
+# "meaningfully covered" threshold already established for siga_live combos
+# (pipeline/coverage_report.py's --min-samples default), rather than
+# introducing an unrelated new number.
+# --------------------------------------------------------------------------
+HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE = 30
+
+# --------------------------------------------------------------------------
+# Snapshot-proximity confidence discount (api/service.py)
+#
+# Found 2026-07-27: the bulk of training labels (historical_derived_proxy
+# AND historical_real_daily_avg) only existed at DIURNAL_SNAPSHOTS' three
+# anchor times (9:30/12:30/15:30) — away from those, the model had far less
+# real support and its predictions were materially less reliable (a
+# same-week day-of-week ranking that looked sensible at 12:30 came out
+# scrambled at 10-11am on the same branch/service). confidence_score
+# discounts requests whose target hour falls outside
+# SNAPSHOT_PROXIMITY_MINUTES of the nearest anchor, same as it already
+# discounts for other missing/stale signals.
+#
+# THIS THRESHOLD SCALES WITH ANCHOR SPACING, NOT A FIXED NUMBER: DIURNAL_
+# SNAPSHOTS was later densified to 8 hourly anchors (60 min apart) — with
+# the old 30-minute threshold, EVERY in-business-hours query would sit
+# within it (max possible distance to the nearest hourly anchor is exactly
+# 30 min, at the midpoint between two anchors), silently turning this
+# discount into dead code. Kept at roughly 1/6 of the anchor spacing, same
+# ratio as when spacing was 3 hours and the threshold was 30 min.
+# --------------------------------------------------------------------------
+SNAPSHOT_PROXIMITY_MINUTES = 10
+SNAPSHOT_DISTANCE_CONFIDENCE_PENALTY = 0.15

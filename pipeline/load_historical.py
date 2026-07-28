@@ -17,8 +17,22 @@ demand-baseline feature, and (b) to derive an approximate, clearly-tagged
 wait-time proxy for bootstrap training until real measured wait times
 accumulate from live scraping.
 
+WHY 36 MONTHS, NOT 24 AND NOT THE FULL ~115 AVAILABLE (2026-07-27):
+the full 2017-2026 range was considered and rejected as overkill — it would
+pull in the 2020-2021 COVID-disrupted period (reduced capacity, distancing
+rules, temporary closures: not representative of normal operation), and
+without an explicit year-trend feature the model mostly just sees repeats
+of the same annual/weekly cycle beyond 2-3 years, for a data source that
+isn't even this project's actual bottleneck (siga_live's live-instant
+coverage is). 36 months lands in mid-2023, cleanly past the COVID era,
+giving 2-3 real annual cycles instead of 1 — a bounded improvement over 24
+months without the drift/contamination risk of going all the way back.
+`pipeline/load_ialc.py` must be pulled for the same range — this feeds
+`pipeline/ingest_real_wait_times.py`'s inner join against IALC-M, so
+extending one without the other doesn't gain anything.
+
 Usage:
-    python -m pipeline.load_historical                 # fetch latest 24 months from the real API
+    python -m pipeline.load_historical                 # fetch latest 36 months from the real API
     python -m pipeline.load_historical --months 12
     python -m pipeline.load_historical --skip-download  # only re-parse whatever is already in data/historical_raw
 """
@@ -166,7 +180,7 @@ def save_known_dimensions(frame: pd.DataFrame) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest the real dados.gov.pt Lojas de Cidadao attendance dataset")
-    parser.add_argument("--months", type=int, default=24, help="Number of most recent monthly files to fetch")
+    parser.add_argument("--months", type=int, default=36, help="Number of most recent monthly files to fetch")
     parser.add_argument("--raw-dir", default=HISTORICAL_RAW_DIR)
     parser.add_argument(
         "--skip-download", action="store_true", help="Only re-parse whatever .xlsx files already exist in --raw-dir"

@@ -18,6 +18,17 @@ WAIT-TIME PROXY FORMULA (documented assumptions, not measured ground truth):
 Assumes config.DEFAULT_DESKS_PER_SERVICE parallel desks — an unverified
 simplification, since the real dataset has no desk-count field.
 
+CALIBRATED avg_service_minutes (2026-07-27): `avg_service_minutes` per row
+now comes from data/calibrated_service_constants.json if present — 3
+category-level constants (see pipeline/service_categories.py) fit by
+pipeline/calibrate_constants.py against real IALC-M branch-day wait times,
+replacing the SERVICE_AVG_MINUTES guesses for whichever services fall in
+each category (holdout RMSE improved ~20% over the hand-guessed constants
+at fit time — see the JSON file's own metrics for the current numbers).
+Falls back to the old per-service SERVICE_AVG_MINUTES/DEFAULT_SERVICE_AVG_MINUTES
+constants if the calibration hasn't been run yet, so this module still works
+standalone on a fresh checkout.
+
 Each day's total is expanded into config.DIURNAL_SNAPSHOTS representative
 daypart snapshots rather than one flat noon timestamp, so the proxy rows
 carry real hour_of_day variance. Each snapshot's wait estimate uses
@@ -37,9 +48,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import sqlite3
+from pathlib import Path
 
 import pandas as pd
 
@@ -55,13 +68,15 @@ from config import (
     SNAPSHOT_WINDOW_HOURS,
     TARGET_DESK_UTILIZATION,
 )
-from pipeline.db import get_connection, init_db, insert_queue_samples, upsert_branch
+from pipeline.db import delete_samples_by_source, get_connection, init_db, insert_queue_samples, upsert_branch
+from pipeline.service_categories import categorize
 from pipeline.geocode_branches import slugify
 from schemas import QueueReading
 
 logger = logging.getLogger(__name__)
 
 CLEANED_BASELINE_PATH = "data/cleaned_historical_baseline.parquet"
+CALIBRATED_CONSTANTS_PATH = "data/calibrated_service_constants.json"
 
 DEMAND_BASELINE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS historical_demand_baseline (
@@ -120,6 +135,29 @@ def estimate_desks_for_volume(
     return max(desks_baseline, volume_implied_desks)
 
 
+def load_calibrated_mu(path: str = CALIBRATED_CONSTANTS_PATH) -> dict[str, float] | None:
+    """Loads category-level avg_service_minutes fit by
+    pipeline/calibrate_constants.py against real IALC-M wait times. Returns
+    None (graceful fallback to the hardcoded SERVICE_AVG_MINUTES constants)
+    if calibration hasn't been run yet -- this module must keep working
+    standalone on a fresh checkout."""
+    if not Path(path).exists():
+        return None
+    with open(path) as f:
+        payload = json.load(f)
+    return payload["mu_by_category"]
+
+
+def avg_service_minutes_for(service_type: str, calibrated_mu: dict[str, float] | None) -> float:
+    """Per-service avg_service_minutes: calibrated category-level value if
+    available (see pipeline/service_categories.py for why category, not
+    per-service, is the granularity that's actually identifiable from real
+    data), else the old hand-guessed per-service constant."""
+    if calibrated_mu is not None:
+        return calibrated_mu[categorize(service_type)]
+    return SERVICE_AVG_MINUTES.get(service_type, DEFAULT_SERVICE_AVG_MINUTES)
+
+
 def load_cleaned_baseline(path: str = CLEANED_BASELINE_PATH) -> pd.DataFrame:
     frame = pd.read_parquet(path)
     # Same slugify() used by pipeline/geocode_branches.py, so store_name here
@@ -160,9 +198,10 @@ def derive_proxy_readings(frame: pd.DataFrame) -> list[QueueReading]:
     per-slot estimate (not a real headcount) so the model has a non-constant
     people_waiting signal to learn from ahead of real siga_live data.
     """
+    calibrated_mu = load_calibrated_mu()
     readings: list[QueueReading] = []
     for row in frame.itertuples(index=False):
-        avg_service_minutes = SERVICE_AVG_MINUTES.get(row.service_type, DEFAULT_SERVICE_AVG_MINUTES)
+        avg_service_minutes = avg_service_minutes_for(row.service_type, calibrated_mu)
         avg_hourly_attendance = row.total_attendances / OPERATING_HOURS_PER_DAY
         desks = estimate_desks_for_volume(row.total_attendances, avg_service_minutes)
 
@@ -211,6 +250,9 @@ def main() -> None:
     logger.info("Saved %d demand-baseline rows to historical_demand_baseline", stored_baseline_rows)
 
     readings = derive_proxy_readings(frame)
+    deleted = delete_samples_by_source(args.db, "historical_derived_proxy")
+    if deleted:
+        logger.info("Deleted %d stale historical_derived_proxy rows from a prior run before re-inserting", deleted)
     with get_connection(args.db) as connection:
         for branch in BRANCHES:
             upsert_branch(connection, branch.branch_id, branch.name, branch.district, branch.latitude, branch.longitude)

@@ -3,6 +3,7 @@ uvicorn[standard]
 pandas
 xgboost
 scikit-learn
+scipy
 joblib
 requests
 openmeteo-requests
@@ -12,3 +13,6 @@ openpyxl
 pyarrow
 pytest
 httpx
+matplotlib
+jupyter
+nbconvert

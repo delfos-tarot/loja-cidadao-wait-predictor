@@ -5,9 +5,19 @@ No network calls, no trained model required.
 
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
-from pipeline.demand_baseline import build_demand_baseline_table, derive_proxy_readings, estimate_wait_minutes_from_attendances
+from config import DEFAULT_SERVICE_AVG_MINUTES, DIURNAL_SNAPSHOTS, SERVICE_AVG_MINUTES
+from pipeline.demand_baseline import (
+    avg_service_minutes_for,
+    build_demand_baseline_table,
+    derive_proxy_readings,
+    estimate_wait_minutes_from_attendances,
+    load_calibrated_mu,
+)
+from pipeline.service_categories import GENERAL_OTHER, categorize
 
 
 def test_estimate_wait_minutes_is_zero_for_no_attendances() -> None:
@@ -56,14 +66,19 @@ def test_derive_proxy_readings_expands_into_diurnal_snapshots() -> None:
 
     readings = derive_proxy_readings(frame)
 
-    assert len(readings) == 3  # one row expanded into 3 daypart snapshots
+    # Asserted against config.DIURNAL_SNAPSHOTS itself (not a hardcoded
+    # count/hour list) so this test doesn't need editing every time the
+    # snapshot resolution changes.
+    assert len(readings) == len(DIURNAL_SNAPSHOTS)
     hours = sorted(r.sampled_at.hour for r in readings)
-    assert hours == [9, 12, 15]
-    # Midday peak (volume_factor=1.4) must show a real, non-flat variance
-    # against morning/afternoon (volume_factor=0.8) — this is the whole
-    # point of the expansion, previously all 3 would have been identical.
+    assert hours == sorted(hour for hour, _, _ in DIURNAL_SNAPSHOTS)
+    # The highest-volume_factor snapshot must show a real, non-flat variance
+    # against the lowest — this is the whole point of the expansion,
+    # previously every snapshot would have been identical.
     waits_by_hour = {r.sampled_at.hour: r.estimated_wait_minutes for r in readings}
-    assert waits_by_hour[12] > waits_by_hour[9] == waits_by_hour[15]
+    peak_hour = max(DIURNAL_SNAPSHOTS, key=lambda s: s[2])[0]
+    trough_hour = min(DIURNAL_SNAPSHOTS, key=lambda s: s[2])[0]
+    assert waits_by_hour[peak_hour] > waits_by_hour[trough_hour]
     assert all(r.people_waiting is not None for r in readings)
     assert all(r.source == "historical_derived_proxy" for r in readings)
 
@@ -85,3 +100,33 @@ def test_build_demand_baseline_table_averages_by_day_of_week() -> None:
 
     assert monday_row["avg_attendances"].iloc[0] == 15.0  # mean of 10 and 20
     assert tuesday_row["avg_attendances"].iloc[0] == 100.0
+
+
+def test_load_calibrated_mu_returns_none_when_file_missing(tmp_path) -> None:
+    assert load_calibrated_mu(str(tmp_path / "does_not_exist.json")) is None
+
+
+def test_load_calibrated_mu_reads_mu_by_category(tmp_path) -> None:
+    fixture_path = tmp_path / "calibrated.json"
+    fixture_path.write_text(json.dumps({"mu_by_category": {"IRN": 11.0, "GENERAL_OTHER": 7.0, "OTHER_SPECIALIZED": 21.0}}))
+
+    calibrated = load_calibrated_mu(str(fixture_path))
+
+    assert calibrated == {"IRN": 11.0, "GENERAL_OTHER": 7.0, "OTHER_SPECIALIZED": 21.0}
+
+
+def test_avg_service_minutes_for_uses_calibrated_category_value_when_available() -> None:
+    calibrated = {"IRN": 11.0, "GENERAL_OTHER": 7.0, "OTHER_SPECIALIZED": 21.0}
+
+    # "Atendimento Geral" categorizes as GENERAL_OTHER -- must use that
+    # category's calibrated value, not the old per-service constant.
+    assert categorize("Atendimento Geral") == GENERAL_OTHER
+    assert avg_service_minutes_for("Atendimento Geral", calibrated) == 7.0
+    # A never-seen service label falls back to GENERAL_OTHER too, same as categorize().
+    assert avg_service_minutes_for("Some Brand New Service", calibrated) == 7.0
+
+
+def test_avg_service_minutes_for_falls_back_to_hardcoded_constants_when_uncalibrated() -> None:
+    known_service = next(iter(SERVICE_AVG_MINUTES))
+    assert avg_service_minutes_for(known_service, None) == SERVICE_AVG_MINUTES[known_service]
+    assert avg_service_minutes_for("Some Brand New Service", None) == DEFAULT_SERVICE_AVG_MINUTES

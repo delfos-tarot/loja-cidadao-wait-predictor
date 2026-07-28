@@ -9,9 +9,24 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
+import pytest
 
-from api.service import PredictionService, WeatherCache, classify_surge_level, haversine_km
-from config import BASELINE_RAIN_MM, BRANCHES_BY_ID, MAX_DERIVED_WAIT_MINUTES
+from api.service import (
+    PredictionService,
+    WeatherCache,
+    classify_surge_level,
+    estimate_people_waiting,
+    haversine_km,
+    minutes_to_nearest_snapshot,
+)
+from config import (
+    BASELINE_ATTENDANCES,
+    BASELINE_RAIN_MM,
+    BRANCHES_BY_ID,
+    DIURNAL_SNAPSHOTS,
+    MAX_DERIVED_WAIT_MINUTES,
+    SNAPSHOT_DISTANCE_CONFIDENCE_PENALTY,
+)
 from pipeline.db import get_connection, insert_queue_samples, upsert_branch
 from pipeline.feature_engineering import FEATURE_COLUMNS
 from schemas import QueueReading
@@ -61,6 +76,30 @@ class _AlwaysFailingWeatherClient:
 
 def _make_service(db_path: str, model, weather_cache=None) -> PredictionService:
     return PredictionService({"model": model, "feature_columns": FEATURE_COLUMNS}, db_path=db_path, weather_cache=weather_cache)
+
+
+def test_estimate_people_waiting_scales_with_avg_attendances() -> None:
+    anchor_hour, anchor_minute, _ = DIURNAL_SNAPSHOTS[0]
+    ts = datetime(2026, 1, 5, anchor_hour, anchor_minute, tzinfo=timezone.utc)
+
+    low_volume = estimate_people_waiting(80.0, ts)
+    high_volume = estimate_people_waiting(918.0, ts)
+
+    # Neither must be the old hardcoded 0 -- that's exactly the bug this
+    # replaced (a busy branch's fallback must not look like an idle one).
+    assert low_volume > 0
+    assert high_volume > low_volume
+
+
+def test_estimate_people_waiting_scales_with_time_of_day_volume_factor() -> None:
+    peak_hour, peak_minute, _ = max(DIURNAL_SNAPSHOTS, key=lambda s: s[2])
+    trough_hour, trough_minute, _ = min(DIURNAL_SNAPSHOTS, key=lambda s: s[2])
+    avg_attendances = 500.0
+
+    at_peak = estimate_people_waiting(avg_attendances, datetime(2026, 1, 5, peak_hour, peak_minute, tzinfo=timezone.utc))
+    at_trough = estimate_people_waiting(avg_attendances, datetime(2026, 1, 5, trough_hour, trough_minute, tzinfo=timezone.utc))
+
+    assert at_peak > at_trough
 
 
 def test_classify_surge_level_boundaries() -> None:
@@ -196,7 +235,13 @@ def test_ignores_stale_people_waiting_for_a_datetime_far_from_now(tmp_path) -> N
     build_result = service._build_features(_NEARBY_BRANCH_A, _SHARED_SERVICE, far_future)
 
     assert build_result.used_live_people_waiting is False
-    assert build_result.features["people_waiting"].iloc[0] == 0
+    # Falls back to a demand-consistent estimate (config.BASELINE_ATTENDANCES,
+    # since no demand_baseline_cache was supplied here), NOT a hardcoded 0 --
+    # a hardcoded 0 paired with a busy branch's real historical_avg_attendances
+    # was found 2026-07-27 to create an out-of-distribution feature
+    # combination that made the model extrapolate erratically (negative raw
+    # predictions on some hours).
+    assert build_result.features["people_waiting"].iloc[0] == estimate_people_waiting(BASELINE_ATTENDANCES, far_future)
 
 
 def test_uses_live_people_waiting_for_a_near_now_request(tmp_path) -> None:
@@ -232,6 +277,41 @@ def _far_future_matching_weekday(target_weekday: int, hour: int) -> datetime:
     base = datetime.now(timezone.utc) + timedelta(days=3650)
     days_ahead = (target_weekday - base.weekday()) % 7
     return (base + timedelta(days=days_ahead)).replace(hour=hour, minute=0, second=0, microsecond=0)
+
+
+def test_minutes_to_nearest_snapshot_at_an_anchor_is_zero() -> None:
+    anchor_hour, anchor_minute, _ = DIURNAL_SNAPSHOTS[0]
+    assert minutes_to_nearest_snapshot(datetime(2026, 1, 5, anchor_hour, anchor_minute, tzinfo=timezone.utc)) == 0.0
+
+
+def test_minutes_to_nearest_snapshot_picks_closest_anchor() -> None:
+    # A small, fixed offset from a real anchor -- robust to DIURNAL_SNAPSHOTS'
+    # exact spacing changing later, as long as anchors stay > 10 min apart.
+    anchor_hour, anchor_minute, _ = DIURNAL_SNAPSHOTS[0]
+    just_after_anchor = datetime(2026, 1, 5, anchor_hour, anchor_minute, tzinfo=timezone.utc) + timedelta(minutes=5)
+    assert minutes_to_nearest_snapshot(just_after_anchor) == 5.0
+
+
+def test_confidence_discounted_far_from_snapshot_anchor_hour(tmp_path) -> None:
+    db_path = str(tmp_path / "empty_queue_history.db")
+    _mark_open(db_path, _NEARBY_BRANCH_A, _SHARED_SERVICE)
+    service = _make_service(db_path, _ConstantModel(10.0), weather_cache=WeatherCache(_AlwaysFailingWeatherClient()))
+
+    # Same weekday, same everything else (empty DB, no live weather) -- the
+    # only difference is proximity to a trained diurnal snapshot anchor.
+    # Uses the midpoint between two real adjacent anchors (always > the
+    # proximity threshold, by construction) rather than a hardcoded hour.
+    base = _far_future_matching_weekday(0, 0)
+    anchor_hour, anchor_minute, _ = DIURNAL_SNAPSHOTS[0]
+    next_hour, next_minute, _ = DIURNAL_SNAPSHOTS[1]
+    at_anchor = base.replace(hour=anchor_hour, minute=anchor_minute)
+    at_next_anchor = base.replace(hour=next_hour, minute=next_minute)
+    midpoint = at_anchor + (at_next_anchor - at_anchor) / 2
+
+    _, confidence_at_anchor = service.predict_wait_minutes(_NEARBY_BRANCH_A, _SHARED_SERVICE, at_anchor)
+    _, confidence_far_from_anchor = service.predict_wait_minutes(_NEARBY_BRANCH_A, _SHARED_SERVICE, midpoint)
+
+    assert confidence_at_anchor - confidence_far_from_anchor == pytest.approx(SNAPSHOT_DISTANCE_CONFIDENCE_PENALTY)
 
 
 def test_is_open_heuristic_true_on_weekday_business_hours(tmp_path) -> None:

@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS queue_samples (
     wait_time_minutes REAL,
     source TEXT NOT NULL DEFAULT 'siga_live',
     is_open INTEGER,
-    raw_wait_time_minutes REAL
+    raw_wait_time_minutes REAL,
+    sample_size INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_samples_lookup
@@ -54,6 +55,10 @@ def init_db(db_path: str) -> None:
         # table from an older schema version — migrate existing DBs in place.
         try:
             connection.execute("ALTER TABLE queue_samples ADD COLUMN raw_wait_time_minutes REAL")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        try:
+            connection.execute("ALTER TABLE queue_samples ADD COLUMN sample_size INTEGER")
         except sqlite3.OperationalError:
             pass  # column already exists
 
@@ -96,8 +101,8 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
         """
         INSERT INTO queue_samples
             (branch_id, desk_service_id, sampled_at, people_waiting,
-             last_ticket_called, wait_time_minutes, source, is_open, raw_wait_time_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             last_ticket_called, wait_time_minutes, source, is_open, raw_wait_time_minutes, sample_size)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             reading.branch_id,
@@ -109,6 +114,7 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
             reading.source,
             None if reading.is_open is None else int(reading.is_open),
             reading.raw_wait_time_minutes,
+            reading.sample_size,
         ),
     )
 
@@ -117,6 +123,21 @@ def insert_queue_samples(connection: sqlite3.Connection, readings: list[QueueRea
     for reading in readings:
         insert_queue_sample(connection, reading)
     return len(readings)
+
+
+def delete_samples_by_source(db_path: str, source: str) -> int:
+    """Deletes every queue_samples row for a fully-regenerable source
+    (historical_derived_proxy, historical_real_daily_avg, synthetic_bootstrap)
+    before re-inserting a fresh batch — without this, re-running a generator
+    script (e.g. after changing config.DIURNAL_SNAPSHOTS) would leave stale
+    rows from the old run sitting alongside the new ones instead of being
+    replaced. Never call this with source='siga_live' — that's real,
+    non-regenerable data."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.execute("DELETE FROM queue_samples WHERE source = ?", (source,))
+        connection.commit()
+        return cursor.rowcount
 
 
 def load_all_samples(db_path: str) -> pd.DataFrame:

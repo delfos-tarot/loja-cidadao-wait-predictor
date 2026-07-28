@@ -21,3 +21,10 @@ class QueueReading:
     # Kept so a value nulled out of estimated_wait_minutes for looking
     # implausible is never actually lost — just not trusted by default.
     raw_wait_time_minutes: float | None = None
+    # How many real attendances back this reading's estimated_wait_minutes —
+    # only meaningful for source='historical_real_daily_avg' (IALC-M branch-day
+    # averages, see pipeline/ingest_real_wait_times.py), where some branch-days
+    # carry as few as 1 real attendance, making that day's "average" a single
+    # noisy raw observation. None for every other source (a single siga_live
+    # reading or a formula-derived proxy row isn't an aggregate of anything).
+    sample_size: int | None = None

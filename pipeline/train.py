@@ -2,19 +2,31 @@
 
 Uses a chronological (non-shuffled) train/test split, since queue wait times
 are a time series and random shuffling would leak future information into
-the training set. Prints MAE, RMSE, and R^2 on the held-out (most recent)
-slice, then saves the fitted model bundled with its feature column order and
-evaluation metrics to `models/xgboost_wait_time.joblib`.
+the training set — but applied per-source (chronological_split_by_source),
+not as one global cutoff across all rows. A single global cutoff would
+structurally exclude siga_live from training entirely, since it's a tiny,
+very recent sliver next to ~2 years of historical data — every live row
+would land in the most-recent 20% (test) and none in training. Splitting
+each source along its own timeline means siga_live gets its own 80/20 split,
+so the model actually trains on some real measurements instead of only
+being tested against data it never learned from. Prints MAE, RMSE, and R^2
+on the held-out slice, then saves the fitted model bundled with its feature
+column order and evaluation metrics to `models/xgboost_wait_time.joblib`.
 
-Rows are not all trusted equally: real `siga_live` measurements get full
-weight; `historical_derived_proxy` / `synthetic_bootstrap` rows get a weight
-that decays per-(branch_id, desk_service_id) as real live coverage grows for
-that specific combo (see `compute_sample_weights`). This is deliberately not
-a global "drop all proxy data once N live rows exist" cutover: real coverage
-will be extremely uneven across ~2,000 distinct combos, and a global
-threshold would blind whichever combos haven't accumulated live data yet.
-Today, with zero siga_live rows anywhere, every weight is 1.0 — this is a
-no-op until live scraping actually produces data.
+Rows are not all trusted equally — four source tiers, weighted differently
+(see `compute_sample_weights`):
+  - `siga_live`: real, per-service, live-instant — weight 1.0.
+  - `historical_real_daily_avg`: real but coarser (branch-level, daily
+    average from IALC-M — see pipeline/ingest_real_wait_times.py), weighted
+    per-row by how many real attendances backed that specific branch-day
+    average (some are as low as 1).
+  - `historical_derived_proxy` / `synthetic_bootstrap`: formula-derived, not
+    measured — weight decays per-(branch_id, desk_service_id) as real
+    `siga_live` coverage grows for that specific combo. Deliberately not a
+    global "drop all proxy data once N live rows exist" cutover: real
+    coverage will be extremely uneven across ~2,000 distinct combos, and a
+    global threshold would blind whichever combos haven't accumulated live
+    data yet.
 
 Usage:
     python -m pipeline.train
@@ -34,7 +46,7 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
-from config import DEFAULT_DB_PATH, DEFAULT_MODEL_PATH, PROXY_WEIGHT_DECAY_ALPHA
+from config import DEFAULT_DB_PATH, DEFAULT_MODEL_PATH, HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE, PROXY_WEIGHT_DECAY_ALPHA
 from pipeline.db import load_all_samples
 from pipeline.feature_engineering import FEATURE_COLUMNS, TARGET_COLUMN, QueueFeatureTransformer
 
@@ -55,12 +67,59 @@ def chronological_split(frame: pd.DataFrame, test_fraction: float) -> tuple[pd.D
     return train_frame, test_frame
 
 
-def compute_sample_weights(frame: pd.DataFrame, alpha: float = PROXY_WEIGHT_DECAY_ALPHA) -> np.ndarray:
-    """Real `siga_live` rows get weight 1.0. Proxy/synthetic rows get
-    1 / (1 + alpha * live_count), where live_count is the number of
-    siga_live rows that specific (branch_id, desk_service_id) already has —
-    so a combo's proxy data fades out only as that combo earns real
-    coverage, without penalizing combos that haven't yet.
+def chronological_split_by_source(frame: pd.DataFrame, test_fraction: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Applies chronological_split independently within each `source`, then
+    recombines — still fully chronological (no shuffling, no future leakage;
+    "time-series discipline" per CLAUDE.md), just anchored to each source's
+    own timeline instead of one global cutoff.
+
+    Found 2026-07-27: a single global chronological cutoff across all
+    sources structurally starves siga_live of any training exposure at
+    all. siga_live only exists for the last few weeks, next to ~2 years of
+    historical_derived_proxy/historical_real_daily_avg — so under one
+    global 80/20 split by row position, literally every siga_live row
+    lands in the most-recent 20% (test), and zero land in training. The
+    "test" of live performance was really "how does a model with zero
+    exposure to live data generalize to it", not "how well does the model
+    learn from live data" — two different questions. Splitting per source
+    means siga_live gets its own 80/20 split along its own (short) timeline,
+    so the model actually gets to train on real measurements for the first
+    time, while historical_derived_proxy/historical_real_daily_avg keep
+    the same global-style split they already had (their timelines already
+    span ~2 years, so a global cutover was never a problem for them).
+    """
+    train_parts, test_parts = [], []
+    for _, subset in frame.groupby("source"):
+        train_subset, test_subset = chronological_split(subset.sort_values("sampled_at"), test_fraction)
+        train_parts.append(train_subset)
+        test_parts.append(test_subset)
+    train_frame = pd.concat(train_parts).sort_values("sampled_at").reset_index(drop=True)
+    test_frame = pd.concat(test_parts).sort_values("sampled_at").reset_index(drop=True)
+    return train_frame, test_frame
+
+
+def compute_sample_weights(
+    frame: pd.DataFrame,
+    alpha: float = PROXY_WEIGHT_DECAY_ALPHA,
+    real_avg_reference_sample_size: float = HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE,
+) -> np.ndarray:
+    """Four-tier weighting by source:
+
+    - `siga_live`: weight 1.0 (real, per-service, live-instant — the
+      strongest ground truth).
+    - `historical_real_daily_avg`: weight sample_size / (sample_size +
+      real_avg_reference_sample_size), using that row's OWN sample_size (how
+      many real attendances backed that specific branch-day average — see
+      pipeline/ingest_real_wait_times.py). Real, but coarser (branch-level,
+      daily) than siga_live, and some branch-days rest on as few as 1
+      attendance, so this is a per-row reliability weight, not a per-combo
+      decay — there's no "combo" to decay against, just "how much do we
+      trust this one number".
+    - `historical_derived_proxy` / `synthetic_bootstrap`: 1 / (1 + alpha *
+      live_count), where live_count is the number of siga_live rows that
+      specific (branch_id, desk_service_id) already has — so a combo's
+      formula-derived proxy fades out only as that combo earns real
+      siga_live coverage, without penalizing combos that haven't yet.
     """
     live_counts = (
         frame.loc[frame["source"] == "siga_live", ["branch_id", "desk_service_id"]]
@@ -68,14 +127,24 @@ def compute_sample_weights(frame: pd.DataFrame, alpha: float = PROXY_WEIGHT_DECA
         .rename("live_count")
         .reset_index()
     )
-    merged = frame[["branch_id", "desk_service_id", "source"]].merge(
-        live_counts, on=["branch_id", "desk_service_id"], how="left"
-    )
+    merge_columns = ["branch_id", "desk_service_id", "source"]
+    if "sample_size" in frame.columns:
+        merge_columns.append("sample_size")
+    merged = frame[merge_columns].merge(live_counts, on=["branch_id", "desk_service_id"], how="left")
     merged["live_count"] = merged["live_count"].fillna(0)
 
     is_live = (merged["source"] == "siga_live").to_numpy()
+    is_real_daily_avg = (merged["source"] == "historical_real_daily_avg").to_numpy()
+
     proxy_weight = 1.0 / (1.0 + alpha * merged["live_count"].to_numpy())
-    return np.where(is_live, 1.0, proxy_weight)
+
+    sample_size = merged["sample_size"].fillna(0).to_numpy() if "sample_size" in merged.columns else np.zeros(len(merged))
+    real_daily_avg_weight = sample_size / (sample_size + real_avg_reference_sample_size)
+
+    weights = proxy_weight
+    weights = np.where(is_real_daily_avg, real_daily_avg_weight, weights)
+    weights = np.where(is_live, 1.0, weights)
+    return weights
 
 
 def train_model(X_train: pd.DataFrame, y_train: pd.Series, sample_weight: np.ndarray | None = None) -> XGBRegressor:
@@ -163,9 +232,10 @@ def main() -> None:
     features[TARGET_COLUMN] = frame[TARGET_COLUMN]
     features["sampled_at"] = frame["sampled_at"]
     features["source"] = frame["source"]
+    features["sample_size"] = frame["sample_size"]
     features = features.sort_values("sampled_at").reset_index(drop=True)
 
-    train_frame, test_frame = chronological_split(features, args.test_fraction)
+    train_frame, test_frame = chronological_split_by_source(features, args.test_fraction)
     logger.info("Train rows: %d | Test rows: %d", len(train_frame), len(test_frame))
 
     X_train, y_train = train_frame[FEATURE_COLUMNS], train_frame[TARGET_COLUMN]
@@ -173,9 +243,10 @@ def main() -> None:
 
     train_weights = compute_sample_weights(train_frame, alpha=args.proxy_decay_alpha)
     live_row_count = int((train_frame["source"] == "siga_live").sum())
+    real_daily_avg_row_count = int((train_frame["source"] == "historical_real_daily_avg").sum())
     logger.info(
-        "Sample weighting: %d live rows in training set (proxy-decay alpha=%.3f)",
-        live_row_count, args.proxy_decay_alpha,
+        "Sample weighting: %d siga_live rows, %d historical_real_daily_avg rows in training set (proxy-decay alpha=%.3f)",
+        live_row_count, real_daily_avg_row_count, args.proxy_decay_alpha,
     )
 
     model = train_model(X_train, y_train, sample_weight=train_weights)

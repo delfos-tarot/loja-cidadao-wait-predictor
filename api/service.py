@@ -25,9 +25,13 @@ from config import (
     BRANCHES,
     BRANCHES_BY_ID,
     DEFAULT_DB_PATH,
+    DIURNAL_SNAPSHOTS,
     MAX_DERIVED_WAIT_MINUTES,
     NEAR_NOW_WINDOW_MINUTES,
+    OPERATING_HOURS_PER_DAY,
     REROUTE_RADIUS_KM,
+    SNAPSHOT_DISTANCE_CONFIDENCE_PENALTY,
+    SNAPSHOT_PROXIMITY_MINUTES,
     SURGE_CLOSED_LABEL,
 )
 from pipeline.db import get_latest_open_status, get_latest_people_waiting, get_rolling_wait_stats
@@ -69,6 +73,39 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     delta_lambda = math.radians(lon2 - lon1)
     a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
     return EARTH_RADIUS_KM * 2 * math.asin(math.sqrt(a))
+
+
+def minutes_to_nearest_snapshot(target_datetime: datetime) -> float:
+    """Minutes between target_datetime's time-of-day and the nearest
+    DIURNAL_SNAPSHOTS anchor -- the hours the bulk of training labels
+    actually exist at. Used to discount confidence for requests the model
+    has comparatively little real support for."""
+    target_minutes = target_datetime.hour * 60 + target_datetime.minute
+    distances = [abs(target_minutes - (hour * 60 + minute)) for hour, minute, _ in DIURNAL_SNAPSHOTS]
+    return float(min(distances))
+
+
+def estimate_people_waiting(avg_attendances: float, target_datetime: datetime) -> int:
+    """A people_waiting estimate consistent with historical_avg_attendances
+    and time-of-day, for use when no live reading is available.
+
+    Found 2026-07-27: the previous fallback (a hardcoded 0, regardless of
+    avg_attendances) paired "zero people waiting" with a high
+    historical_avg_attendances at a busy hour -- a combination that never
+    occurs in training (a real high-volume midday row always has a
+    correspondingly high people_waiting, since both are derived from the
+    same attendance count in pipeline/demand_baseline.py). That
+    out-of-distribution combination made the model extrapolate erratically,
+    including negative raw predictions the API then silently clamped to
+    0.0. This mirrors demand_baseline.py's own
+    avg_hourly_attendance * volume_factor calculation, using the nearest
+    snapshot's volume_factor for target_datetime's time-of-day, so the
+    fallback feature vector looks like something the model actually saw.
+    """
+    nearest = min(DIURNAL_SNAPSHOTS, key=lambda s: abs((target_datetime.hour * 60 + target_datetime.minute) - (s[0] * 60 + s[1])))
+    volume_factor = nearest[2]
+    avg_hourly_attendance = avg_attendances / OPERATING_HOURS_PER_DAY
+    return round(avg_hourly_attendance * volume_factor)
 
 
 class WeatherCache:
@@ -210,7 +247,9 @@ class PredictionService:
         is_near_now = abs((datetime.now(timezone.utc) - target_datetime).total_seconds()) <= NEAR_NOW_WINDOW_MINUTES * 60
         people_waiting = get_latest_people_waiting(self.db_path, branch_id, desk_service_id)[0] if is_near_now else None
         used_live_people_waiting = people_waiting is not None
-        row["people_waiting"] = people_waiting if people_waiting is not None else 0
+        row["people_waiting"] = (
+            people_waiting if people_waiting is not None else estimate_people_waiting(avg_attendances, target_datetime)
+        )
 
         avg_15min, avg_1h = get_rolling_wait_stats(self.db_path, branch_id, desk_service_id, target_datetime)
         used_live_rolling_stats = avg_15min is not None and avg_1h is not None
@@ -234,7 +273,12 @@ class PredictionService:
         confidence_score is a deterministic heuristic (not a statistical
         prediction interval): it starts at 1.0 and is discounted for each
         external/live signal that had to fall back to a baseline, since a
-        model built from more, fresher live signal is more trustworthy.
+        model built from more, fresher live signal is more trustworthy. It
+        is also discounted when target_datetime falls far from the diurnal
+        snapshot hours (9:30/12:30/15:30) the bulk of training labels are
+        anchored to — see config.SNAPSHOT_PROXIMITY_MINUTES and
+        minutes_to_nearest_snapshot's docstring for why: the model has
+        materially less real support away from those hours.
 
         A closed branch short-circuits to (0.0, high confidence) without
         running the model at all — predicting a queue wait at a closed
@@ -268,6 +312,8 @@ class PredictionService:
             confidence -= 0.10
         if not build_result.used_real_demand_baseline:
             confidence -= 0.10
+        if minutes_to_nearest_snapshot(target_datetime) > SNAPSHOT_PROXIMITY_MINUTES:
+            confidence -= SNAPSHOT_DISTANCE_CONFIDENCE_PENALTY
         confidence = round(min(0.99, max(0.05, confidence)), 2)
 
         return round(prediction, 1), confidence
