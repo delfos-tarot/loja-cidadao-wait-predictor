@@ -1,0 +1,61 @@
+name: Scraper watchdog
+
+on:
+  schedule:
+    # Every 15 min, weekday business hours -- deliberately much more
+    # frequent than siga_scraper.yml's own 2-hour slots. GitHub's own docs
+    # say the `schedule` trigger can be delayed *or silently dropped* under
+    # high load, with no error to catch (see siga_scraper.yml's comments and
+    # CLAUDE.md -- found 2026-07-28 that 2 consecutive real slots didn't
+    # fire at all, not just late). Running this watchdog on its own separate
+    # 15-min schedule means many more independent chances for at least one
+    # tick to get through and notice the gap, rather than hoping a handful
+    # of fixed-time crons individually dodge the same congestion window.
+    - cron: "*/15 7-17 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write # needed to list/dispatch runs of siga_scraper.yml
+
+jobs:
+  check-and-backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch siga_scraper if it hasn't run recently
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Newest run of any status/event for the target workflow.
+          LATEST_JSON=$(gh run list --repo "$REPO" --workflow siga_scraper.yml \
+            --limit 1 --json status,createdAt)
+          LATEST_STATUS=$(echo "$LATEST_JSON" | jq -r '.[0].status // empty')
+          LATEST_CREATED=$(echo "$LATEST_JSON" | jq -r '.[0].createdAt // empty')
+
+          if [ "$LATEST_STATUS" = "in_progress" ] || [ "$LATEST_STATUS" = "queued" ]; then
+            echo "A run is already $LATEST_STATUS, nothing to do."
+            exit 0
+          fi
+
+          if [ -z "$LATEST_CREATED" ]; then
+            echo "No prior runs found at all -- dispatching."
+          else
+            LATEST_EPOCH=$(date -d "$LATEST_CREATED" +%s)
+            NOW_EPOCH=$(date -u +%s)
+            AGE_MIN=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 ))
+            echo "Last run started $AGE_MIN min ago (at $LATEST_CREATED)."
+
+            # Real slots are ~120 min apart. 100 min gives each slot a
+            # generous window to fire on its own before the watchdog steps
+            # in, while still catching a miss well within the same slot's
+            # opening/midday/afternoon intent rather than hours later.
+            if [ "$AGE_MIN" -lt 100 ]; then
+              echo "Recent enough, nothing to do."
+              exit 0
+            fi
+          fi
+
+          echo "No recent run -- dispatching siga_scraper.yml now."
+          gh workflow run siga_scraper.yml --repo "$REPO"
