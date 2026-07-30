@@ -297,6 +297,37 @@ TARGET_DESK_UTILIZATION = 0.7
 # else. This is still a documented approximation, not measured ground
 # truth (a bell-ish ramp-up/peak/wind-down shape), just at finer
 # resolution than before.
+#
+# !! OPEN FINDING (2026-07-30): REAL DATA SUGGESTS THIS CURVE IS INVERTED.
+# The first real intra-day evidence this project has ever had -- live SIGA
+# `people_waiting` counts, which (unlike tempoRealEspera) show no sign of
+# the stale-counter pathology -- disagrees with the shape below, strongly.
+# Normalized per (branch, service) to remove composition bias, across 71
+# branches, by LOCAL (Europe/Lisbon) hour:
+#     hour   assumed   observed
+#      9      0.70      1.33
+#     10      0.85      1.67   <- real peak
+#     11      1.00      1.39
+#     12      1.35      0.88
+#     13      1.35      0.63   <- real trough
+#     14      1.10      0.72
+# Pearson correlation between assumed and observed: -0.79. The assumed
+# peak (12-13h) is close to the observed *quietest* hour. Ask the model
+# "what's the best hour to go" today and it will confidently recommend
+# roughly the busiest real time, because this curve is what generated the
+# hour_of_day signal in ~6.9M historical_derived_proxy training labels --
+# so it is baked into the bulk of the training data, not just inference.
+#
+# NOT yet acted on, deliberately: only ~3 days of live data back this, and
+# one innocent explanation isn't ruled out -- a midday dip in
+# `people_waiting` could reflect staff lunch breaks cutting capacity
+# rather than genuinely lower demand (the factors below are meant to
+# represent demand volume). Recalibrating is also high-blast-radius: it
+# regenerates every proxy label (pipeline/demand_baseline.py) and would
+# invalidate the fitted output of pipeline/calibrate_constants.py, which
+# was calibrated against labels built from the current factors. Revisit
+# once several more weeks of live coverage exist; recalibrate against real
+# people_waiting rather than re-guessing the shape by hand.
 # --------------------------------------------------------------------------
 DIURNAL_SNAPSHOTS: tuple[tuple[int, int, float], ...] = (
     (9, 30, 0.70),   # opening ramp-up

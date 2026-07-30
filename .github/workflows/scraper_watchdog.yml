@@ -21,6 +21,7 @@ on:
 
 permissions:
   actions: write # needed to list/dispatch runs of siga_scraper.yml
+  issues: write # needed to raise a collection-stalled alert (see the last step)
 
 jobs:
   check-and-backfill:
@@ -70,3 +71,61 @@ jobs:
 
           echo "No recent run -- dispatching siga_scraper.yml now."
           gh workflow run siga_scraper.yml --repo "$REPO"
+
+      # Deliberately `if: always()` and internally `|| true`: this step is
+      # pure alerting and must never be able to fail the run or interfere
+      # with the dispatch above -- collecting data matters more than
+      # reporting on it.
+      #
+      # Added 2026-07-30 to close a real gap: data collection is driven by
+      # an EXTERNAL cron (cron-job.org calling this workflow's
+      # workflow_dispatch), because GitHub's own `schedule:` trigger proved
+      # unreliable -- see siga_scraper.yml's comments. Nothing alerted when
+      # that external trigger went silent for ~2 hours on 2026-07-29; it
+      # was noticed by chance. This step is the safety net for exactly
+      # that, and it works even if the external trigger is the thing that
+      # died, because this workflow's own (unreliable but non-zero)
+      # `schedule:` trigger still fires it eventually -- late is far better
+      # than never.
+      #
+      # Threshold is generous (3h) relative to the ~20-30 min steady-state
+      # cadence: this alerts on "collection has genuinely stalled", not on
+      # the ordinary late tick the dispatch logic above already handles.
+      # Reuses siga_scraper.yml's one-open-issue-per-problem pattern so a
+      # multi-hour outage comments on a single issue instead of filing one
+      # per tick.
+      - name: Alert if data collection has stalled
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+
+          STALL_THRESHOLD_MIN=180
+
+          LATEST_CREATED=$(gh run list --repo "$REPO" --workflow siga_scraper.yml \
+            --limit 1 --json createdAt --jq '.[0].createdAt // empty') || true
+          if [ -z "${LATEST_CREATED:-}" ]; then
+            echo "Could not determine the last run time; skipping alert check."
+            exit 0
+          fi
+
+          AGE_MIN=$(( ( $(date -u +%s) - $(date -d "$LATEST_CREATED" +%s) ) / 60 ))
+          echo "Last siga_scraper run started $AGE_MIN min ago."
+          if [ "$AGE_MIN" -lt "$STALL_THRESHOLD_MIN" ]; then
+            exit 0
+          fi
+
+          gh label create collection-stalled --repo "$REPO" \
+            --color D93F0B --description "No siga_scraper run completed recently" 2>/dev/null || true
+
+          BODY="No \`siga_scraper.yml\` run has started in **$AGE_MIN minutes** (last: $LATEST_CREATED). Expected cadence is ~20-30 min during business hours. Most likely cause: the external cron (cron-job.org) that dispatches \`scraper_watchdog.yml\` has stopped firing — check its execution history and that its GitHub token is still valid (it 401'd once on 2026-07-29 when the auth header didn't save)."
+
+          EXISTING=$(gh issue list --repo "$REPO" --label collection-stalled --state open --json number --jq '.[0].number') || true
+          if [ -z "${EXISTING:-}" ]; then
+            gh issue create --repo "$REPO" --title "Live data collection has stalled" \
+              --label collection-stalled --body "$BODY" || true
+          else
+            gh issue comment "$EXISTING" --repo "$REPO" --body "$BODY" || true
+          fi

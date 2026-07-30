@@ -212,6 +212,31 @@ pytest -v
      midpoint) — silently dead code passing all its own tests. Now 10 min
      (same ~1/6-of-spacing ratio as before).
 
+   **OPEN FINDING (2026-07-30) — `DIURNAL_SNAPSHOTS`' volume factors
+   appear inverted relative to reality; do not trust hour-of-day
+   predictions until resolved.** Those factors were always a documented
+   hand-drawn approximation (SLC-M has no intra-day timestamp, so nothing
+   in the historical data could ever validate them). Live SIGA
+   `people_waiting` counts are the first real intra-day evidence this
+   project has had, and they disagree sharply: normalized per (branch,
+   service) across 71 branches, the observed peak is **10am local (1.67)**
+   and the observed trough is **1pm (0.63)**, while the assumed curve puts
+   its peak at 12-13h (1.35) and its lowest weight at 9am (0.70).
+   Correlation between assumed and observed: **-0.79**. Practical
+   consequence: asked "what's the best hour to go", the model currently
+   recommends approximately the busiest real time. `people_waiting` was
+   used deliberately rather than `tempoRealEspera` — the latter climbs
+   monotonically 36 -> 75 min across the day, the signature of the
+   stale-counter pathology, not a real queue.
+
+   Deliberately **not** acted on yet: only ~3 days of live data support
+   it, a midday `people_waiting` dip could plausibly reflect staff lunch
+   breaks cutting capacity rather than lower demand, and recalibration is
+   high-blast-radius (regenerates every proxy label, invalidates
+   `calibrate_constants.py`'s fitted output). When revisited, recalibrate
+   against real `people_waiting` rather than re-guessing the shape by
+   hand. Full numbers in `config.py` above `DIURNAL_SNAPSHOTS`.
+
    **Found and fixed the same day:** predictions for genuinely far-future
    dates — where `rain_mm`/`people_waiting`/rolling-wait-stats all fall
    back to baseline simultaneously — came out erratic: several anchor
