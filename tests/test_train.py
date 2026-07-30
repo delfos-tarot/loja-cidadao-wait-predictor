@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
+from pipeline.db import clean_siga_live_readings
 from pipeline.train import chronological_split_by_source, compute_sample_weights, evaluate_by_source
 
 
@@ -110,6 +111,25 @@ def test_proxy_weight_decays_as_that_combos_live_count_grows() -> None:
     assert abs(proxy_weight - 0.5) < 1e-9
 
 
+def test_proxy_weight_decays_from_live_rows_filed_under_a_siga_specific_name(monkeypatch) -> None:
+    # The point of the service crosswalk (pipeline/reconcile_siga_services.py):
+    # real coverage recorded as "Câmara - Atendimento Geral" must still decay
+    # the proxy rows filed under the dados.gov.pt name "Atendimento Geral".
+    # Without it these are different join keys and the proxy never decays.
+    monkeypatch.setattr(
+        "pipeline.train.load_service_crosswalk",
+        lambda: {"Câmara - Atendimento Geral": "Atendimento Geral"},
+    )
+    rows = [{"branch_id": "a", "desk_service_id": "Atendimento Geral", "source": "historical_derived_proxy"}]
+    rows += [{"branch_id": "a", "desk_service_id": "Câmara - Atendimento Geral", "source": "siga_live"} for _ in range(20)]
+    frame = pd.DataFrame(rows)
+
+    weights = compute_sample_weights(frame, alpha=0.05)
+
+    # Same 1 / (1 + 0.05 * 20) = 0.5 as if the names had matched exactly.
+    assert abs(weights[0] - 0.5) < 1e-9
+
+
 def test_proxy_weight_never_affected_by_other_combos_live_counts() -> None:
     frame = pd.DataFrame(
         [
@@ -207,3 +227,128 @@ def test_evaluate_by_source_segments_multiple_sources_independently() -> None:
     assert set(results.keys()) == {"historical_derived_proxy", "siga_live"}
     assert results["historical_derived_proxy"]["n"] == 4
     assert results["siga_live"]["n"] == 2
+
+
+def _live_row(branch_id: str, service: str, sampled_at: datetime, wait: float) -> dict:
+    return {"branch_id": branch_id, "desk_service_id": service, "sampled_at": sampled_at, "wait_time_minutes": wait, "source": "siga_live"}
+
+
+def test_clean_siga_live_readings_drops_frozen_high_wait_repeats() -> None:
+    # Found 2026-07-30: a value identical to the prior poll despite ~20 real
+    # minutes elapsed is a stuck/stale reading, not a genuine observation --
+    # dropping it costs nothing since it adds no information beyond the
+    # already-kept prior row.
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _live_row("b1", "s1", now, 450.0),
+            _live_row("b1", "s1", now + timedelta(minutes=20), 450.0),  # frozen repeat
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].iloc[0] == 450.0
+    assert pd.isna(cleaned["wait_time_minutes"].iloc[1]), "frozen repeat must become NaN so it gets dropped downstream"
+
+
+def test_clean_siga_live_readings_leaves_low_value_repeats_alone() -> None:
+    # A branch legitimately sitting at 0 min wait across consecutive polls is
+    # a real, mundane pattern -- not the pathology this targets. Restricting
+    # the frozen check to >= SIGA_STALENESS_CHECK_MIN_WAIT_MINUTES avoids
+    # discarding genuine quiet periods.
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _live_row("b1", "s1", now, 0.0),
+            _live_row("b1", "s1", now + timedelta(minutes=15), 0.0),
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].tolist() == [0.0, 0.0]
+
+
+def test_clean_siga_live_readings_clamps_erratic_swings_instead_of_dropping() -> None:
+    # Found 2026-07-30: deltas up to +-18,000 min between polls 20-40 min
+    # apart -- physically impossible. Clamped to a plausible bound around
+    # the prior reading rather than dropped, so a corrected point survives.
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _live_row("b1", "s1", now, 10.0),
+            _live_row("b1", "s1", now + timedelta(minutes=20), 5000.0),  # impossible jump
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    second = cleaned["wait_time_minutes"].iloc[1]
+    assert second is not None and not pd.isna(second), "erratic row must be clamped, not dropped"
+    assert second < 5000.0
+    assert second == 10.0 + 20 * 10.0  # prev_wait + gap_minutes * max_change_per_minute
+
+
+def test_clean_siga_live_readings_leaves_plausible_changes_untouched() -> None:
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _live_row("b1", "s1", now, 50.0),
+            _live_row("b1", "s1", now + timedelta(minutes=15), 40.0),  # plausible drop
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].tolist() == [50.0, 40.0]
+
+
+def test_clean_siga_live_readings_ignores_gaps_too_large_to_compare() -> None:
+    # A multi-hour gap (e.g. overnight or an outage) says nothing about
+    # staleness or rate of change -- must not be compared at all.
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _live_row("b1", "s1", now, 450.0),
+            _live_row("b1", "s1", now + timedelta(hours=12), 450.0),  # same value, but not comparable
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].tolist() == [450.0, 450.0]
+
+
+def test_clean_siga_live_readings_never_touches_other_sources() -> None:
+    now = datetime.now(timezone.utc)
+    frame = pd.DataFrame(
+        [
+            {
+                "branch_id": "b1",
+                "desk_service_id": "s1",
+                "sampled_at": now,
+                "wait_time_minutes": 450.0,
+                "source": "historical_derived_proxy",
+            },
+            {
+                "branch_id": "b1",
+                "desk_service_id": "s1",
+                "sampled_at": now + timedelta(minutes=20),
+                "wait_time_minutes": 450.0,
+                "source": "historical_derived_proxy",
+            },
+        ]
+    )
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].tolist() == [450.0, 450.0]
+
+
+def test_clean_siga_live_readings_first_reading_for_a_combo_is_untouched() -> None:
+    frame = pd.DataFrame([_live_row("b1", "s1", datetime.now(timezone.utc), 450.0)])
+
+    cleaned = clean_siga_live_readings(frame)
+
+    assert cleaned["wait_time_minutes"].iloc[0] == 450.0

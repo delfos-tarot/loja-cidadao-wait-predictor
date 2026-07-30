@@ -58,7 +58,8 @@ loja-cidadao/
 │   ├── calibrated_service_constants.json  # fitted avg_service_minutes per category (generated)
 │   ├── siga_relevant_queries.json     # (distrito,entidade,senha) triples to poll (generated)
 │   ├── siga_discovered_locations.json # raw matched SIGA locations (generated)
-│   └── siga_branch_crosswalk.json     # branch_id <-> siga_location_id (generated)
+│   ├── siga_branch_crosswalk.json     # branch_id <-> siga_location_id (generated)
+│   └── siga_desk_service_crosswalk.json  # SIGA service name -> dados.gov.pt name (generated)
 ├── scrapers/                # live SIGA polling script
 ├── pipeline/                # ingestion, discovery, feature engineering, training
 ├── models/                  # serialized .joblib model artifacts
@@ -117,6 +118,7 @@ python -m pipeline.synthetic_bootstrap --days 30
 #    branches appear or the API changes shape):
 python -m pipeline.siga_discovery                # ~15-20 min: crawl all 18 mainland districts
 python -m pipeline.reconcile_siga_branches        # match discovered locations to the branch registry
+python -m pipeline.reconcile_siga_services        # match SIGA service names to the dados.gov.pt vocabulary (proxy-decay join)
 
 # Then poll live queue data. Two ways to run it:
 python -m scrapers.siga_scraper --once                     # writes straight to data/queue_history.db (local use)
@@ -377,6 +379,56 @@ pytest -v
     breaks down under real load), but the shape of the problem is now
     well-characterized enough to design a targeted fix around, rather
     than a single global cutoff.
+  - **The targeted fix, built 2026-07-30: `pipeline/db.py`'s
+    `clean_siga_live_readings()`.** The flat 480-min ceiling was still
+    letting contaminated readings through just under it — found by
+    inspecting `train.py`'s held-out residuals, where the 20 worst
+    `siga_live` misses all had labels of 387-480 min against 0-4 people
+    waiting, and `abs(residual)` correlated with the raw wait at 0.745 but
+    with `people_waiting` at only 0.169. Comparing each reading to the same
+    combo's immediately-preceding poll separated **two distinct failure
+    modes**: ~55% of >=300min readings are *frozen* (unchanged despite
+    15-30 real minutes elapsed), the rest are *erratic* (deltas up to
+    ±18,000 min between polls 20-40 min apart). This also refuted the
+    "SIGA measures ticket-queue depth, which `people_waiting` doesn't
+    capture" theory — a real ticket queue cannot both freeze and swing by
+    18,000 minutes. Frozen repeats are dropped (zero information loss —
+    a stuck value adds nothing beyond the already-kept prior reading);
+    erratic ones are *clamped, not dropped*, so a corrected point
+    survives. Measured on retrain: `siga_live` MAE 36.2 -> 29.4 min
+    (-19%), RMSE 75.2 -> 64.6. **R² fell 0.540 -> 0.497 and that is not a
+    regression** — cleaning removed extreme values from the target's
+    distribution in both train and test, and R² is scored against that
+    (now narrower) variance. Trust the minute-denominated MAE/RMSE here;
+    R² is only comparable across models scored on an identical target
+    distribution.
+  - **Service-name reconciliation (`pipeline/reconcile_siga_services.py`,
+    2026-07-30)** finally closes the gap `coverage_report.py` had been
+    flagging: orphaned combos dropped 229 -> 56. Two hard-won constraints
+    are encoded there, both found by inspecting real output rather than
+    trusting the score:
+    1. **Matching is structural, never score-based.** Pure string
+       similarity ranked `'Atendimento email'` -> `'Atendimento EMEL'`
+       (an email desk vs. Lisbon's parking authority) at 0.909 — *higher*
+       than several correct matches — plus `'Chamadas efetuadas'` ->
+       `'Chamadas recebidas'` (semantic opposites) and two others. No
+       threshold separates these, so only normalized-exact or
+       canonical-contained-in-SIGA matches are accepted. Six names stay
+       unreconciled as a result (including `'Geral'`); that is the
+       intended trade — an unreconciled combo merely forgoes proxy-decay,
+       while a wrong merge pollutes a real service's training data.
+    2. **The crosswalk is applied to `compute_sample_weights`' join
+       only — never to rename `desk_service_id` on the frame.** Renaming
+       was tried first and actively corrupted the data: several branches
+       run multiple physically distinct desks whose SIGA names reduce to
+       one canonical name (Coimbra has 5), and every desk at a branch
+       shares one sweep's `sampled_at`. Renaming collapsed them into a
+       zero-gap series, which drove `clean_siga_live_readings`'
+       `max_plausible_delta` to zero and clamped away genuine
+       between-desk differences (clamps 336 -> 764; MAE 29.5 -> 30.3).
+       `tests/test_db.py::test_load_all_samples_does_not_rename_service_names`
+       guards this. **Grouping keys for any time-series operation must
+       stay one-per-real-desk.**
 - **Weather**: Open-Meteo Forecast API (rainfall `rain_mm`) by branch
   coordinates. Its `start_date`/`end_date` params only cover roughly the last
   ~110 days plus forecast — for training rows older than that (most of our

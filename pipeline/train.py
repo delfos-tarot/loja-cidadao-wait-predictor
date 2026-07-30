@@ -47,7 +47,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
 from config import DEFAULT_DB_PATH, DEFAULT_MODEL_PATH, HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE, PROXY_WEIGHT_DECAY_ALPHA
-from pipeline.db import load_all_samples
+from pipeline.db import clean_siga_live_readings, load_all_samples, load_service_crosswalk
 from pipeline.feature_engineering import FEATURE_COLUMNS, TARGET_COLUMN, QueueFeatureTransformer
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 
 def load_training_frame(db_path: str) -> pd.DataFrame:
     frame = load_all_samples(db_path)
+    frame = clean_siga_live_readings(frame)
     frame = frame.dropna(subset=[TARGET_COLUMN])
     frame = frame.sort_values("sampled_at").reset_index(drop=True)
     return frame
@@ -120,13 +121,23 @@ def compute_sample_weights(
       specific (branch_id, desk_service_id) already has — so a combo's
       formula-derived proxy fades out only as that combo earns real
       siga_live coverage, without penalizing combos that haven't yet.
+
+    Live rows' service names are mapped through the SIGA service crosswalk
+    (pipeline/reconcile_siga_services.py) *for this count only*, so real
+    coverage recorded under a SIGA-specific name ("Câmara - Atendimento
+    Geral") still decays the proxy rows filed under the dados.gov.pt name
+    ("Atendimento Geral"). Note several such SIGA names can map to one
+    canonical name at the same branch — that's intended here, since they
+    are all real coverage of that service and their counts should sum.
+    The mapping is deliberately confined to this join: see
+    pipeline/db.py's load_service_crosswalk docstring for how renaming the
+    frame itself instead corrupted the time-series grouping.
     """
-    live_counts = (
-        frame.loc[frame["source"] == "siga_live", ["branch_id", "desk_service_id"]]
-        .value_counts()
-        .rename("live_count")
-        .reset_index()
-    )
+    live_rows = frame.loc[frame["source"] == "siga_live", ["branch_id", "desk_service_id"]]
+    crosswalk = load_service_crosswalk()
+    if crosswalk:
+        live_rows = live_rows.assign(desk_service_id=live_rows["desk_service_id"].replace(crosswalk))
+    live_counts = live_rows.value_counts().rename("live_count").reset_index()
     merge_columns = ["branch_id", "desk_service_id", "source"]
     if "sample_size" in frame.columns:
         merge_columns.append("sample_size")

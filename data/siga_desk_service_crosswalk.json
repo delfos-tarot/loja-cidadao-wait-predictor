@@ -1,0 +1,127 @@
+[
+  {
+    "siga_service_name": "CM Vila Franca de Xira - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.821
+  },
+  {
+    "siga_service_name": "SMAS Vila Franca Xira - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.824
+  },
+  {
+    "siga_service_name": "Senha A - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.889
+  },
+  {
+    "siga_service_name": "Atendimento Geral/ General Attendance",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.838
+  },
+  {
+    "siga_service_name": "ATENDIMENTO GERAL",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Atendimento geral; Declarações; Atualizações",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.816
+  },
+  {
+    "siga_service_name": "Registo Predial - Certidões / Inf. ",
+    "canonical_service_name": "Registo Predial - Certidões / Inf.",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Pagamento Taxas",
+    "canonical_service_name": "Pagamento",
+    "match_confidence": 0.88
+  },
+  {
+    "siga_service_name": "Atendimento geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Atendimento email",
+    "canonical_service_name": "Atendimento",
+    "match_confidence": 0.894
+  },
+  {
+    "siga_service_name": "Atendimento Geral Empresa",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.904
+  },
+  {
+    "siga_service_name": "Atendimento telefónico - Chamadas efetuadas",
+    "canonical_service_name": "Atendimento Telefónico",
+    "match_confidence": 0.853
+  },
+  {
+    "siga_service_name": "(Re)Inscrição; Prestação de desemprego ",
+    "canonical_service_name": "(Re)Inscrição; Prestação de desemprego",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": " Certificados /Traduções / Procurações/ Reconhecimentos / Fotocópias/ Instrumentos/ Outros",
+    "canonical_service_name": "Certificados /Traduções / Procurações/ Reconhecimentos / Fotocópias/ Instrumentos/ Outros",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Águas de Gaia, EEM - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.834
+  },
+  {
+    "siga_service_name": "Câmara Municipal - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.842
+  },
+  {
+    "siga_service_name": "Câmara - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.896
+  },
+  {
+    "siga_service_name": " Registo de Cidadãos da União Europeia",
+    "canonical_service_name": "Registo de Cidadãos da União Europeia",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Atendimento Geral ",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "Cultura e Desporto ",
+    "canonical_service_name": "Cultura e Desporto",
+    "match_confidence": 1.0
+  },
+  {
+    "siga_service_name": "TAXAS E LICENÇAS - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.842
+  },
+  {
+    "siga_service_name": "URBANISMO - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.876
+  },
+  {
+    "siga_service_name": "Águas e Resíduos - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.842
+  },
+  {
+    "siga_service_name": "Assuntos Gerais - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.846
+  },
+  {
+    "siga_service_name": "Urbanismo - Atendimento Geral",
+    "canonical_service_name": "Atendimento Geral",
+    "match_confidence": 0.876
+  }
+]

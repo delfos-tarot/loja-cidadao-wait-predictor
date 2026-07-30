@@ -211,6 +211,47 @@ NEAR_NOW_WINDOW_MINUTES = 60
 # for a synthetic queueing formula's assumptions, not a real-world constraint.
 REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES = 480
 
+# Found 2026-07-30: the flat 480-min ceiling above still let contaminated
+# readings through just under it. Diagnosed via pipeline.train's held-out
+# residuals on siga_live -- the 20 worst prediction misses all had actual
+# labels of 387-480 min (right against the ceiling) with 0-4 people
+# actually waiting, and abs(residual) correlated with raw_wait_time_minutes
+# at 0.745 but with people_waiting at only 0.169. Checked across the full
+# corpus, not just the tail: of 931 rows with wait_time_minutes >= 300,
+# 88.3% had people_waiting <= 1. Comparing each reading to the same
+# (branch, service)'s immediately preceding poll confirmed two distinct
+# failure modes, not one: ~55% of >=300min readings are frozen (delta <=5
+# min despite ~15-30 real minutes elapsed -- a stale/stuck value carrying
+# zero new information), and the rest show an erratic tail (deltas up to
+# +-18,000 min between polls 20-40 min apart -- physically impossible for
+# a real ticket queue, which even accounting for people stepping out and
+# returning cannot swing that fast). Neither pattern is consistent with a
+# genuine measurement of something people_waiting merely doesn't capture.
+# pipeline/db.py's clean_siga_live_readings() uses these two constants
+# to drop frozen repeats (true information loss: zero, since a stuck value
+# adds nothing beyond the already-kept prior reading) and clamp -- not
+# discard -- the erratic tail to a plausible bound, so a corrected data
+# point survives instead of being thrown away. Only checked/applied at
+# wait_time_minutes >= this threshold: freezing at a low value (e.g. two
+# consecutive genuine 0-min readings) is mundane and real, not a bug
+# signal -- restricting to the regime where the pathology was actually
+# found avoids discarding legitimate quiet periods.
+SIGA_STALENESS_CHECK_MIN_WAIT_MINUTES = 300
+# Two consecutive polls of the same (branch, service) are only compared if
+# no more than this many real minutes elapsed -- guards against comparing
+# across a multi-hour or multi-day scraper gap (e.g. an overnight or
+# outage gap), where a "no change" or big swing is expected and meaningless
+# for staleness/erratic-rate detection. ~2x the ~15-20 min steady-state
+# sweep cadence as of 2026-07-30, generous enough to tolerate a missed tick.
+SIGA_STALENESS_CHECK_MAX_GAP_MINUTES = 40
+# Deliberately generous (not a tight physical model): a real wait dropping
+# steadily as tickets are served, or rising during a rush, stays well under
+# this. Chosen to only catch the clearly-impossible tail found above (ratios
+# of hundreds-to-thousands of minutes of "change" per minute of real elapsed
+# time) while leaving ordinary real dynamics untouched -- minimizing false
+# positives over catching every last erratic point.
+SIGA_MAX_PLAUSIBLE_WAIT_CHANGE_PER_MINUTE = 10.0
+
 # --------------------------------------------------------------------------
 # Wait-time proxy derivation (pipeline/demand_baseline.py)
 #

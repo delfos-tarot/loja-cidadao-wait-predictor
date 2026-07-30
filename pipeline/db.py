@@ -9,15 +9,25 @@ Schema:
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterator
 
+import numpy as np
 import pandas as pd
 
+from config import (
+    SIGA_MAX_PLAUSIBLE_WAIT_CHANGE_PER_MINUTE,
+    SIGA_STALENESS_CHECK_MAX_GAP_MINUTES,
+    SIGA_STALENESS_CHECK_MIN_WAIT_MINUTES,
+)
 from schemas import QueueReading
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS branches (
@@ -140,6 +150,43 @@ def delete_samples_by_source(db_path: str, source: str) -> int:
         return cursor.rowcount
 
 
+SERVICE_CROSSWALK_PATH = "data/siga_desk_service_crosswalk.json"
+
+
+def load_service_crosswalk(crosswalk_path: str = SERVICE_CROSSWALK_PATH) -> dict[str, str]:
+    """Returns {siga_service_name: canonical_dados_gov_name} from
+    data/siga_desk_service_crosswalk.json (pipeline/reconcile_siga_services.py),
+    or {} if it hasn't been generated yet — see that module and
+    pipeline/coverage_report.py's docstrings for the problem it solves: a
+    SIGA name like "Câmara - Atendimento Geral" and the dados.gov.pt name
+    "Atendimento Geral" are the same real service, but
+    compute_sample_weights joins on the raw string, so an unreconciled
+    combo's proxy rows never see their weight decay from real live coverage.
+
+    **Deliberately returns the mapping instead of applying it**, and callers
+    must only use it for *joining/counting* — never to rewrite
+    `desk_service_id` on the frame itself. Tried the latter first
+    (2026-07-30, renaming siga_live rows inside load_all_samples) and it
+    actively corrupted the data: several branches run multiple physically
+    distinct desks whose SIGA names all reduce to the same canonical name
+    (Coimbra alone has 5 — "ATENDIMENTO GERAL", "Atendimento Geral
+    Empresa", "Câmara - Atendimento Geral", ...), and every desk at a
+    branch is scraped in the same sweep, so they share an identical
+    `sampled_at`. Renaming collapsed them into one series whose consecutive
+    rows had a zero-minute gap, which made clean_siga_live_readings'
+    `max_plausible_delta` zero — so any genuine difference between two real
+    desks was flagged erratic and clamped away. Measured: clamps jumped
+    336 -> 764 and the siga_live segment got worse (MAE 29.5 -> 30.3,
+    R^2 0.496 -> 0.481) on an otherwise-identical retrain. Grouping keys
+    for time-series work must stay one-per-real-desk.
+    """
+    try:
+        entries = json.loads(Path(crosswalk_path).read_text())
+    except FileNotFoundError:
+        return {}
+    return {entry["siga_service_name"]: entry["canonical_service_name"] for entry in entries}
+
+
 def load_all_samples(db_path: str) -> pd.DataFrame:
     init_db(db_path)
     with sqlite3.connect(db_path) as connection:
@@ -201,6 +248,84 @@ def get_latest_open_status(db_path: str, branch_id: str, desk_service_id: str) -
     return bool(row[0]) if row is not None else None
 
 
+def clean_siga_live_readings(
+    frame: pd.DataFrame,
+    target_column: str = "wait_time_minutes",
+    min_wait_minutes: float = SIGA_STALENESS_CHECK_MIN_WAIT_MINUTES,
+    max_gap_minutes: float = SIGA_STALENESS_CHECK_MAX_GAP_MINUTES,
+    max_change_per_minute: float = SIGA_MAX_PLAUSIBLE_WAIT_CHANGE_PER_MINUTE,
+) -> pd.DataFrame:
+    """Corrects two failure modes found 2026-07-30 in `source='siga_live'`
+    rows with `wait_time_minutes` near config.REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES's
+    ceiling -- see config.py's docstring above SIGA_STALENESS_CHECK_MIN_WAIT_MINUTES
+    for the full diagnosis. Compares each reading only to that same
+    (branch_id, desk_service_id)'s immediately preceding poll, and only when
+    they're close enough in time (<= max_gap_minutes) to be meaningfully
+    comparable -- a gap spanning an overnight/outage tells you nothing about
+    staleness or rate of change.
+
+    - Frozen repeats (identical to the prior poll despite real elapsed time,
+      at >= min_wait_minutes): target set to NaN, so a caller doing its own
+      dropna(subset=[target_column]) excludes them. True information loss is
+      zero -- a stuck value adds nothing beyond the already-kept prior
+      reading.
+    - Erratic swings (change far exceeding max_change_per_minute's plausible
+      rate): clamped to the nearest plausible bound around the prior
+      reading, not dropped -- preserves a corrected data point instead of
+      losing the row entirely.
+
+    Only ever touches siga_live rows; every other source passes through
+    completely untouched, since none of them showed this pattern (checked
+    2026-07-30: max wait_time_minutes of 180 and 417 respectively for
+    historical_derived_proxy/historical_real_daily_avg, both far under the
+    ceiling where this pathology was found).
+
+    Lives here (not pipeline/train.py, its original home) so both the
+    offline training frame (pipeline/train.py's load_training_frame) and
+    the online single-row rolling-stats lookup (get_rolling_wait_stats
+    below, used by api/service.py for near-now predictions) share the exact
+    same cleaning logic -- the same reason QueueFeatureTransformer is
+    shared between the two rather than reimplemented per call site.
+    """
+    is_live = frame["source"] == "siga_live"
+    if not is_live.any():
+        return frame
+
+    frame = frame.copy()
+    live = frame.loc[is_live, ["branch_id", "desk_service_id", "sampled_at", target_column]].sort_values(
+        ["branch_id", "desk_service_id", "sampled_at"]
+    )
+    grouped = live.groupby(["branch_id", "desk_service_id"], sort=False)
+    prev_wait = grouped[target_column].shift(1)
+    prev_time = grouped["sampled_at"].shift(1)
+    gap_minutes = (live["sampled_at"] - prev_time).dt.total_seconds() / 60.0
+
+    comparable = gap_minutes.notna() & (gap_minutes <= max_gap_minutes)
+    is_frozen = comparable & (live[target_column] >= min_wait_minutes) & (live[target_column] == prev_wait)
+
+    max_plausible_delta = gap_minutes * max_change_per_minute
+    delta = (live[target_column] - prev_wait).abs()
+    is_erratic = comparable & ~is_frozen & prev_wait.notna() & (delta > max_plausible_delta)
+
+    dropped = int(is_frozen.sum())
+    clamped = int(is_erratic.sum())
+
+    if dropped:
+        frame.loc[live.index[is_frozen], target_column] = np.nan
+
+    if clamped:
+        bounded = live[target_column].clip(lower=prev_wait - max_plausible_delta, upper=prev_wait + max_plausible_delta)
+        bounded = bounded.clip(lower=0.0)
+        frame.loc[live.index[is_erratic], target_column] = bounded[is_erratic]
+
+    if dropped or clamped:
+        logger.info(
+            "clean_siga_live_readings: dropped %d frozen repeats, clamped %d erratic swings (of %d siga_live rows)",
+            dropped, clamped, len(live),
+        )
+    return frame
+
+
 def get_rolling_wait_stats(
     db_path: str, branch_id: str, desk_service_id: str, as_of: datetime
 ) -> tuple[float | None, float | None]:
@@ -208,24 +333,46 @@ def get_rolling_wait_stats(
 
     Either element is None if no samples with a known wait_time_minutes fall
     inside that window; callers should apply a statistical baseline fallback.
+
+    Runs readings through clean_siga_live_readings before averaging (found
+    2026-07-30 -- see that function's docstring) rather than a plain SQL
+    AVG(): a frozen or erratic siga_live reading landing inside the window
+    would otherwise corrupt this feature for a live near-now prediction the
+    same way it corrupted training labels before that fix. Queries an extra
+    max_gap_minutes of lookback beyond the 1h window so the earliest
+    in-window reading still has a real prior reading to compare against,
+    matching how the offline training path always has full history
+    available for that same comparison.
     """
     init_db(db_path)
-    as_of_iso = as_of.isoformat()
-    window_15min_start = (as_of - timedelta(minutes=15)).isoformat()
-    window_1h_start = (as_of - timedelta(hours=1)).isoformat()
+    lookback_start = as_of - timedelta(hours=1, minutes=SIGA_STALENESS_CHECK_MAX_GAP_MINUTES)
 
     query = """
-        SELECT AVG(wait_time_minutes) FROM queue_samples
+        SELECT branch_id, desk_service_id, sampled_at, wait_time_minutes, source
+        FROM queue_samples
         WHERE branch_id = ? AND desk_service_id = ?
-          AND sampled_at BETWEEN ? AND ? AND wait_time_minutes IS NOT NULL
+          AND source = 'siga_live'
+          AND sampled_at BETWEEN ? AND ?
+        ORDER BY sampled_at
     """
     with sqlite3.connect(db_path) as connection:
-        avg_15min = connection.execute(query, (branch_id, desk_service_id, window_15min_start, as_of_iso)).fetchone()[0]
-        avg_1h = connection.execute(query, (branch_id, desk_service_id, window_1h_start, as_of_iso)).fetchone()[0]
+        frame = pd.read_sql_query(query, connection, params=(branch_id, desk_service_id, lookback_start.isoformat(), as_of.isoformat()))
+
+    if frame.empty:
+        return None, None
+
+    frame["sampled_at"] = pd.to_datetime(frame["sampled_at"], utc=True)
+    frame = clean_siga_live_readings(frame)
+    frame = frame.dropna(subset=["wait_time_minutes"])
+
+    window_15min_start = as_of - timedelta(minutes=15)
+    window_1h_start = as_of - timedelta(hours=1)
+    in_15min = frame[frame["sampled_at"] >= window_15min_start]
+    in_1h = frame[frame["sampled_at"] >= window_1h_start]
 
     return (
-        float(avg_15min) if avg_15min is not None else None,
-        float(avg_1h) if avg_1h is not None else None,
+        float(in_15min["wait_time_minutes"].mean()) if len(in_15min) else None,
+        float(in_1h["wait_time_minutes"].mean()) if len(in_1h) else None,
     )
 
 
