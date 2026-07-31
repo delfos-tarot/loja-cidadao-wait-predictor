@@ -130,6 +130,31 @@ def test_proxy_weight_decays_from_live_rows_filed_under_a_siga_specific_name(mon
     assert abs(weights[0] - 0.5) < 1e-9
 
 
+def test_raising_alpha_cannot_affect_a_combo_with_no_live_coverage() -> None:
+    # The safety property behind raising PROXY_WEIGHT_DECAY_ALPHA 0.05 -> 0.5
+    # on 2026-07-31: weight is 1/(1 + alpha*live_count), so live_count=0
+    # gives exactly 1.0 for ANY alpha. This is what makes the change a
+    # per-combo adjustment rather than a global down-weighting -- the ~1,500
+    # combos whose only signal is the proxy tier must be untouched.
+    frame = pd.DataFrame([{"branch_id": "no_live", "desk_service_id": "svc", "source": "historical_derived_proxy"}])
+
+    for alpha in [0.05, 0.5, 5.0, 500.0]:
+        assert compute_sample_weights(frame, alpha=alpha)[0] == 1.0
+
+
+def test_higher_alpha_decays_a_covered_combos_proxy_faster() -> None:
+    rows = [{"branch_id": "a", "desk_service_id": "svc", "source": "historical_derived_proxy"}]
+    rows += [{"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"} for _ in range(30)]
+    frame = pd.DataFrame(rows)
+
+    weak = compute_sample_weights(frame, alpha=0.05)[0]
+    strong = compute_sample_weights(frame, alpha=0.5)[0]
+
+    assert strong < weak
+    assert abs(weak - 1 / (1 + 0.05 * 30)) < 1e-9
+    assert abs(strong - 1 / (1 + 0.5 * 30)) < 1e-9
+
+
 def test_proxy_weight_never_affected_by_other_combos_live_counts() -> None:
     frame = pd.DataFrame(
         [

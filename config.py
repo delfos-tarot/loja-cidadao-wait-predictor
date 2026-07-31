@@ -353,8 +353,39 @@ SNAPSHOT_WINDOW_HOURS = 1.0
 # own combo's live sample count: w = 1 / (1 + alpha * live_count). At
 # live_count=0 (true today — no live scraping has run yet) w=1.0, i.e. this
 # is a no-op until live data actually exists.
+#
+# RAISED 0.05 -> 0.5 on 2026-07-31, because 0.05 was far too weak to matter.
+# Measured at that point: siga_live held 39,904 rows against 6.89M proxy
+# rows, so despite carrying weight 1.0 per row it was **0.77% of total
+# training weight**. The model was being fit toward a weighted mean target
+# of 5.53 min while real live waits averaged 44.53 — and a forward test
+# (pipeline/forward_test.py) showed exactly that signature: predicted mean
+# 28.5 against an actual 41.2, i.e. systematic under-prediction, which for
+# a citizen-facing wait estimate is the more damaging direction of error.
+#
+# The decay was too slow to bite at ANY realistic coverage level. On the
+# best-covered combo in the whole dataset (65 live samples) a proxy row had
+# still only decayed to 0.235, leaving proxy outweighing live 19:1 there.
+# That also explains why the under-prediction looked uniform across
+# well-covered and sparse combos alike — proxy dominates both, so uniformity
+# was evidence FOR proxy dominance, not against it.
+#
+# 0.5 brings that same best-covered combo to roughly 2.4:1 rather than
+# flipping it live-dominant — deliberately conservative, since ~30% of live
+# readings are still of questionable quality (see
+# REAL_DATA_MAX_PLAUSIBLE_WAIT_MINUTES above) and should not be trusted to
+# outvote everything else outright.
+#
+# WHY THIS IS SAFE FOR LOW-COVERAGE COMBOS, which is the obvious worry:
+# weight is 1/(1 + alpha*live_count), so a combo with zero live samples
+# keeps weight exactly 1.0 for ANY alpha. Raising alpha can only ever affect
+# combos that have earned real coverage — it is not a global down-weighting,
+# and the ~1,500 combos relying solely on proxy data are untouched by
+# construction. pipeline/forward_test.py's coverage split exists to verify
+# that invariant empirically after any change here: the sparse segment must
+# come out unchanged.
 # --------------------------------------------------------------------------
-PROXY_WEIGHT_DECAY_ALPHA = 0.05
+PROXY_WEIGHT_DECAY_ALPHA = 0.5
 
 # --------------------------------------------------------------------------
 # historical_real_daily_avg reliability weighting (pipeline/train.py)

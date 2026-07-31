@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quando ir à Loja do Cidadão</title>
+<meta name="description" content="Quando ir à Loja do Cidadão: melhor dia, lojas alternativas e tempos de espera reais, com base em 19 milhões de atendimentos publicados em dados.gov.pt.">
+<style>
+:root{
+  --surface-0:#f6f4f1; --surface-1:#efece7; --surface-2:#ffffff;
+  --ink-1:#1c1b19; --ink-2:#55534e; --ink-3:#8a8781;
+  --line:#e5e2dc; --line-strong:#d2cec6;
+  --chart:#2f7a52; --chart-soft:#2f7a52;
+  --warn-ink:#8a5a12; --good-ink:#2f6b41;
+  --radius:10px; --panel-radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface-0:#141317; --surface-1:#1d1c21; --surface-2:#212026;
+    --ink-1:#f2f1ef; --ink-2:#b3b0aa; --ink-3:#84817b;
+    --line:#302f37; --line-strong:#43414b;
+    --chart:#7ecfa2; --chart-soft:#7ecfa2;
+    --warn-ink:#e8b866; --good-ink:#8fd3a6;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--surface-0); color:var(--ink-1);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.5; -webkit-font-smoothing:antialiased; text-align:center;
+}
+.wrap{max-width:880px; margin:0 auto; padding:0 28px 72px}
+@media (max-width:640px){ .wrap{padding:0 18px 56px} }
+
+.site-header{padding:30px 0 26px}
+.site-header h1{font-size:16px;font-weight:600;margin:0;letter-spacing:-.01em}
+
+.query-panel{margin-bottom:26px}
+.query-panel label{display:block;font-size:13.5px;color:var(--ink-3);margin-bottom:8px}
+select{
+  width:100%;max-width:420px;font:inherit;font-size:16px;color:var(--ink-1);text-align:center;
+  background:var(--surface-2);border:1px solid var(--line-strong);
+  border-radius:var(--radius);padding:12px 34px;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),linear-gradient(135deg,var(--ink-3) 50%,transparent 50%);
+  background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;
+  background-size:6px 6px,6px 6px;background-repeat:no-repeat;
+}
+select:focus{outline:2px solid var(--ink-2);outline-offset:1px}
+
+/* panels — the dashboard's unit of order */
+.panel{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--panel-radius);
+  padding:26px 26px 24px;margin-bottom:14px;
+}
+.panel + .panel{margin-top:0}
+.panel-label{
+  font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);
+  margin:0 0 16px;font-weight:500;
+}
+.rule{height:1px;background:var(--line);margin:24px -26px}
+
+.verdict{font-size:26px;font-weight:500;line-height:1.3;letter-spacing:-.02em;margin:0 auto 22px;max-width:24ch}
+
+.stat-label{font-size:13.5px;color:var(--ink-3);margin:0 0 3px}
+.stat-value{font-size:52px;font-weight:500;line-height:1.05;letter-spacing:-.03em;margin:0}
+.stat-value span{font-size:20px;font-weight:400;color:var(--ink-2);margin-left:8px;letter-spacing:0}
+.basis{font-size:13px;color:var(--ink-3);margin:14px 0 0}
+
+.chart{display:block;width:100%;max-width:620px;height:auto;margin:22px auto 0}
+
+.alt-name{font-size:22px;font-weight:500;letter-spacing:-.015em;margin:0 0 3px}
+.alt-name em{font-style:normal;font-weight:400;font-size:15px;color:var(--ink-3);margin-left:8px}
+.alt .stat-value{font-size:38px}
+.alt-none{font-size:16px;color:var(--ink-2);margin:0}
+
+.giveup-value{font-size:34px;font-weight:500;letter-spacing:-.025em;color:var(--warn-ink);margin:0 0 6px;line-height:1.1}
+.giveup-text{margin:0 auto;font-size:15.5px;line-height:1.55;color:var(--ink-2);max-width:44ch}
+
+.week{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:560px;margin:0 auto}
+.day{
+  background:var(--surface-1);border:1px solid transparent;border-radius:var(--radius);
+  padding:14px 4px 13px;text-align:center;cursor:pointer;font:inherit;color:inherit;
+}
+.day:hover{border-color:var(--line-strong)}
+.day[aria-pressed="true"]{border-color:var(--ink-2);background:var(--surface-2)}
+.day .d{display:block;font-size:12.5px;color:var(--ink-3);margin-bottom:5px}
+.day .m{display:block;font-size:19px;font-weight:500}
+.day .m small{font-size:11.5px;font-weight:400;color:var(--ink-3)}
+.day.best .m{color:var(--good-ink)}
+.day.worst .m{color:var(--warn-ink)}
+
+.validating{margin-top:22px}
+.validating .tag{
+  display:inline-block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);border:1px solid var(--line-strong);border-radius:999px;padding:2px 10px;margin-bottom:8px;
+}
+.validating p{margin:0 auto;font-size:14px;color:var(--ink-3);max-width:42ch}
+
+.now-line{display:block;padding:24px;text-decoration:none;color:inherit}
+.now-line strong{display:block;font-size:19px;font-weight:500;letter-spacing:-.015em}
+.now-line em{display:block;font-style:normal;font-size:14.5px;color:var(--ink-3);margin-top:5px}
+.now-line:hover strong{color:var(--chart)}
+
+.evidence{display:grid;grid-template-columns:repeat(4,1fr);padding:24px 0 22px}
+.evidence div{padding:2px 12px;border-left:1px solid var(--line)}
+.evidence div:first-child{border-left:0}
+.evidence b{display:block;font-size:25px;font-weight:500;letter-spacing:-.02em;line-height:1.2}
+.evidence span{display:block;font-size:13px;color:var(--ink-3);margin-top:4px}
+@media (max-width:620px){
+  .evidence{grid-template-columns:repeat(2,1fr);gap:20px 0}
+  .evidence div:nth-child(3){border-left:0}
+}
+footer.src{margin:22px auto 0;font-size:13px;color:var(--ink-3);line-height:1.65;max-width:62ch}
+footer.src a{color:var(--ink-2)}
+.nodata{font-size:16.5px;color:var(--ink-2);max-width:50ch;margin:0 auto;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="site-header">
+    <h1>Quando ir à Loja do Cidadão</h1>
+  </header>
+
+  <section class="query-panel">
+    <label for="branch">Onde vai?</label>
+    <select id="branch"></select>
+  </section>
+
+  <div id="dashboard" aria-live="polite"></div>
+
+  <section class="panel" id="week-panel">
+    <p class="panel-label">Média de espera por dia útil</p>
+    <div class="week" id="week" role="group" aria-label="Escolher dia da semana"></div>
+    <div class="validating">
+      <span class="tag">Em validação</span>
+      <p>O modelo de cálculo ainda está em construção. Vai melhorar com o tempo.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <a class="now-line" href="https://siga.marcacaodeatendimento.pt" rel="noopener">
+      <strong>Ver a fila neste momento →</strong>
+      <em>O SIGA mostra o estado ao vivo. Esta página serve para planear.</em>
+    </a>
+    <div class="rule"></div>
+    <div class="evidence" id="fontes"></div>
+  </section>
+
+  <footer class="src">
+    Dados: <a href="https://dados.gov.pt" rel="noopener">dados.gov.pt</a> — Indicadores dos Atendimentos das Lojas de Cidadão (IALC-M).
+    Médias medidas, sem estimativa. Dias com menos de 30 atendimentos são excluídos por serem pouco estáveis.
+  </footer>
+
+</div>
+
+<script src="data.js"></script>
+<script>
+(function () {
+  var DAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"];
+  var SHORT = ["Seg", "Ter", "Qua", "Qui", "Sex"];
+  var MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+                "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+  var MIN_MEANINGFUL_MINUTES = 3;
+
+  var DATA = window.LOJA_DATA;
+  var branches = DATA.branches;
+  var corpus = DATA.corpus;
+
+  var select = document.getElementById("branch");
+  var dashboard = document.getElementById("dashboard");
+  var week = document.getElementById("week");
+  var weekPanel = document.getElementById("week-panel");
+
+  var currentId = "loja_de_cidadao_do_saldanha";
+  var today = new Date().getDay();
+  var currentDay = today >= 1 && today <= 5 ? today - 1 : 0;
+
+  var byDistrict = {};
+  Object.keys(branches).forEach(function (id) {
+    var d = branches[id].d || "Outros";
+    (byDistrict[d] = byDistrict[d] || []).push(id);
+  });
+  Object.keys(byDistrict).sort(function (a, b) { return a.localeCompare(b, "pt"); }).forEach(function (d) {
+    var group = document.createElement("optgroup");
+    group.label = d;
+    byDistrict[d]
+      .sort(function (a, b) { return branches[a].n.localeCompare(branches[b].n, "pt"); })
+      .forEach(function (id) {
+        var opt = document.createElement("option");
+        opt.value = id; opt.textContent = branches[id].n;
+        group.appendChild(opt);
+      });
+    select.appendChild(group);
+  });
+  if (!branches[currentId]) currentId = Object.keys(branches)[0];
+  select.value = currentId;
+  select.addEventListener("change", function () { currentId = select.value; render(); });
+
+  function validDays(b) {
+    return b.wk.map(function (v, i) { return { i: i, v: v }; }).filter(function (x) { return x.v > 0; });
+  }
+  function shortName(id) {
+    return branches[id] ? branches[id].n.replace(/^Loja de Cidadão d[eoa]s? /, "") : "";
+  }
+  function basisText() {
+    var f = corpus.from.split("-"), t = corpus.to.split("-");
+    return "Com base em dados de " + MONTHS[+f[1] - 1] + " de " + f[0] +
+           " a " + MONTHS[+t[1] - 1] + " de " + t[0] + ".";
+  }
+
+  // Round the axis outward to a multiple of `step` so the gridline labels are
+  // readable numbers (20/30/40) rather than whatever the data's own min and
+  // max happen to be.
+  function niceBounds(values) {
+    var lo = Math.min.apply(null, values), hi = Math.max.apply(null, values);
+    var step = (hi - lo) > 40 ? 20 : (hi - lo) > 16 ? 10 : 5;
+    var flo = Math.floor(lo / step) * step;
+    var fhi = Math.ceil(hi / step) * step;
+    if (fhi === flo) fhi = flo + step;
+    return { lo: flo, hi: fhi, step: step };
+  }
+
+  function chart(values) {
+    if (!values || values.length < 2) return "";
+    var W = 620, H = 190, padL = 40, padR = 12, padT = 14, padB = 30;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var b = niceBounds(values);
+    var y = function (v) { return padT + (b.hi - v) * (plotH / (b.hi - b.lo)); };
+    var x = function (i) { return padL + i * (plotW / (values.length - 1)); };
+
+    var ticks = [], t;
+    for (t = b.lo; t <= b.hi; t += b.step) ticks.push(t);
+    if (ticks.length > 5) ticks = ticks.filter(function (_, i) { return i % 2 === 0; });
+
+    var grid = ticks.map(function (v) {
+      return '<line x1="' + padL + '" y1="' + y(v).toFixed(1) + '" x2="' + (W - padR) +
+        '" y2="' + y(v).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>' +
+        '<text x="' + (padL - 10) + '" y="' + (y(v) + 4).toFixed(1) +
+        '" text-anchor="end" font-size="12" fill="var(--ink-3)">' + v + "</text>";
+    }).join("");
+
+    var pts = values.map(function (v, i) { return x(i).toFixed(1) + "," + y(v).toFixed(1); });
+    var area = "M" + pts[0] + " L" + pts.join(" L") +
+      " L" + x(values.length - 1).toFixed(1) + "," + (padT + plotH) +
+      " L" + x(0).toFixed(1) + "," + (padT + plotH) + " Z";
+    var lastX = x(values.length - 1), lastY = y(values[values.length - 1]);
+    var gid = "cg" + Math.random().toString(36).slice(2, 8);
+
+    return '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img" ' +
+      'aria-label="Espera média por semana nas últimas ' + values.length + ' semanas, entre ' +
+      Math.min.apply(null, values) + " e " + Math.max.apply(null, values) + ' minutos">' +
+      '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--chart)" stop-opacity=".22"/>' +
+      '<stop offset="100%" stop-color="var(--chart)" stop-opacity="0"/>' +
+      "</linearGradient></defs>" +
+      grid +
+      '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+      '<polyline fill="none" stroke="var(--chart)" stroke-width="2.5" stroke-linejoin="round" ' +
+      'stroke-linecap="round" points="' + pts.join(" ") + '"/>' +
+      '<circle cx="' + lastX.toFixed(1) + '" cy="' + lastY.toFixed(1) + '" r="4.5" fill="var(--chart)"/>' +
+      '<text x="' + padL + '" y="' + (H - 8) + '" text-anchor="start" font-size="12" fill="var(--ink-3)">há ' +
+      values.length + ' semanas</text>' +
+      '<text x="' + (W - padR) + '" y="' + (H - 8) + '" text-anchor="end" font-size="12" fill="var(--ink-3)">agora</text>' +
+      "</svg>";
+  }
+
+  function giveUpLine(b) {
+    var ratio = Math.max(2, Math.round(100 / b.gu));
+    var relative = Math.round((b.gu / corpus.give_up_national - 1) * 100);
+    var tail;
+    if (Math.abs(relative) < 10) tail = "Em linha com a média nacional.";
+    else if (relative > 0) tail = "Mais " + relative + "% que a média nacional.";
+    else tail = "Menos " + Math.abs(relative) + "% que a média nacional.";
+    return { big: "1 em " + ratio, text: "pessoas desistiu de esperar nesta loja. " + tail };
+  }
+
+  function render() {
+    var b = branches[currentId];
+
+    if (!b.ok) {
+      dashboard.innerHTML = '<section class="panel"><p class="nodata"><strong>' + b.n +
+        "</strong> não regista tempos de espera. Os dados oficiais desta loja vêm sempre a zero, " +
+        "o que indica um campo não preenchido — não uma loja sem fila.</p></section>";
+      weekPanel.hidden = true;
+      renderEvidence();
+      return;
+    }
+    weekPanel.hidden = false;
+
+    var days = validDays(b);
+    if (!days.length) { dashboard.innerHTML = '<section class="panel"><p class="nodata">Sem dados estáveis para esta loja.</p></section>'; return; }
+    if (b.wk[currentDay] === 0) currentDay = days[0].i;
+
+    var dayWait = b.wk[currentDay];
+    var lo = Math.min.apply(null, days.map(function (x) { return x.v; }));
+    var hi = Math.max.apply(null, days.map(function (x) { return x.v; }));
+    var flat = hi - lo < MIN_MEANINGFUL_MINUTES;
+    var best = days.reduce(function (m, x) { return x.v < m.v ? x : m; });
+    var gu = giveUpLine(b);
+
+    var html =
+      '<section class="panel">' +
+        '<p class="verdict">' + DAYS[best.i] + " é dos dias mais calmos nesta loja.</p>" +
+        '<p class="stat-label">Espera típica:</p>' +
+        '<p class="stat-value">' + dayWait + " <span>minutos</span></p>" +
+        '<p class="basis">' + basisText() + "</p>" +
+        chart(b.sp) +
+      "</section>";
+
+    var alt = (b.alt || [])[0];
+    html += '<section class="panel alt"><p class="panel-label">Alternativas perto</p>';
+    if (alt && branches[alt.id]) {
+      html += '<p class="alt-name">' + shortName(alt.id) + "<em>a " + Math.round(alt.km) + " km</em></p>" +
+        '<p class="stat-label">Espera típica:</p>' +
+        '<p class="stat-value">' + alt.w + " <span>minutos</span></p>";
+    } else {
+      html += '<p class="alt-none">Nenhuma a menos de 15 km.</p>';
+    }
+    html += "</section>";
+
+    html += '<section class="panel"><p class="giveup-value">' + gu.big + "</p>" +
+      '<p class="giveup-text">' + gu.text + "</p></section>";
+
+    dashboard.innerHTML = html;
+
+    week.innerHTML = b.wk.map(function (v, i) {
+      if (!v) return '<div class="day" aria-hidden="true"><span class="d">' + SHORT[i] + '</span><span class="m"><small>—</small></span></div>';
+      var cls = "day";
+      if (!flat && v === lo) cls += " best";
+      if (!flat && v === hi) cls += " worst";
+      return '<button type="button" class="' + cls + '" data-day="' + i + '" aria-pressed="' + (i === currentDay) + '">' +
+        '<span class="d">' + SHORT[i] + '</span><span class="m">' + v + " <small>min</small></span></button>";
+    }).join("");
+
+    Array.prototype.forEach.call(week.querySelectorAll("button"), function (btn) {
+      btn.addEventListener("click", function () { currentDay = +btn.dataset.day; render(); });
+    });
+
+    renderEvidence();
+  }
+
+  function renderEvidence() {
+    document.getElementById("fontes").innerHTML =
+      "<div><b>" + (corpus.attendances / 1e6).toFixed(0) + " milhões</b><span>atendimentos reais</span></div>" +
+      "<div><b>" + corpus.branch_days.toLocaleString("pt-PT") + "</b><span>dias com espera medida</span></div>" +
+      "<div><b>" + corpus.branches + "</b><span>lojas, " + corpus.districts + " distritos</span></div>" +
+      "<div><b>desde " + corpus.from.slice(0, 4) + "</b><span>dados.gov.pt</span></div>";
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
