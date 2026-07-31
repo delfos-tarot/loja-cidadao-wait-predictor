@@ -40,6 +40,11 @@ from pipeline.feature_engineering import (
     apply_categorical_dtypes,
     add_calendar_features,
     add_tax_deadline_features,
+    # Defined in feature_engineering, not here, so training fills a missing
+    # people_waiting with the exact same formula this module uses -- they
+    # diverged until 2026-07-31 (see estimate_people_waiting_series). Kept
+    # importable from api.service for existing callers/tests.
+    estimate_people_waiting,
     estimate_is_open_heuristic,
 )
 
@@ -83,29 +88,6 @@ def minutes_to_nearest_snapshot(target_datetime: datetime) -> float:
     target_minutes = target_datetime.hour * 60 + target_datetime.minute
     distances = [abs(target_minutes - (hour * 60 + minute)) for hour, minute, _ in DIURNAL_SNAPSHOTS]
     return float(min(distances))
-
-
-def estimate_people_waiting(avg_attendances: float, target_datetime: datetime) -> int:
-    """A people_waiting estimate consistent with historical_avg_attendances
-    and time-of-day, for use when no live reading is available.
-
-    Found 2026-07-27: the previous fallback (a hardcoded 0, regardless of
-    avg_attendances) paired "zero people waiting" with a high
-    historical_avg_attendances at a busy hour -- a combination that never
-    occurs in training (a real high-volume midday row always has a
-    correspondingly high people_waiting, since both are derived from the
-    same attendance count in pipeline/demand_baseline.py). That
-    out-of-distribution combination made the model extrapolate erratically,
-    including negative raw predictions the API then silently clamped to
-    0.0. This mirrors demand_baseline.py's own
-    avg_hourly_attendance * volume_factor calculation, using the nearest
-    snapshot's volume_factor for target_datetime's time-of-day, so the
-    fallback feature vector looks like something the model actually saw.
-    """
-    nearest = min(DIURNAL_SNAPSHOTS, key=lambda s: abs((target_datetime.hour * 60 + target_datetime.minute) - (s[0] * 60 + s[1])))
-    volume_factor = nearest[2]
-    avg_hourly_attendance = avg_attendances / OPERATING_HOURS_PER_DAY
-    return round(avg_hourly_attendance * volume_factor)
 
 
 class WeatherCache:

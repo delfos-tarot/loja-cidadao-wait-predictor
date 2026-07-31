@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +32,10 @@ from config import (
     BRANCHES_BY_ID,
     DEFAULT_DB_PATH,
     DESK_SERVICES,
+    DIURNAL_SNAPSHOTS,
     IMI_DEADLINE_MONTHS_DAYS,
     IRS_DEADLINE_MONTH_DAY,
+    OPERATING_HOURS_PER_DAY,
 )
 
 logger = logging.getLogger(__name__)
@@ -280,6 +283,54 @@ def add_weather_features(
 # Lag / rolling wait-time signals
 # --------------------------------------------------------------------------
 
+def estimate_people_waiting(avg_attendances: float, target_datetime: datetime) -> int:
+    """A people_waiting estimate consistent with historical_avg_attendances
+    and time-of-day, for use when no live reading is available.
+
+    Found 2026-07-27: the previous fallback (a hardcoded 0, regardless of
+    avg_attendances) paired "zero people waiting" with a high
+    historical_avg_attendances at a busy hour -- a combination that never
+    occurs in training (a real high-volume midday row always has a
+    correspondingly high people_waiting, since both are derived from the
+    same attendance count in pipeline/demand_baseline.py). That
+    out-of-distribution combination made the model extrapolate erratically,
+    including negative raw predictions the API then silently clamped to
+    0.0. This mirrors demand_baseline.py's own
+    avg_hourly_attendance * volume_factor calculation, using the nearest
+    snapshot's volume_factor for target_datetime's time-of-day, so the
+    fallback feature vector looks like something the model actually saw.
+
+    Lives here rather than in api/service.py (where it was originally
+    written) so training and serving share one definition -- see
+    estimate_people_waiting_series below for why that matters.
+    """
+    nearest = min(DIURNAL_SNAPSHOTS, key=lambda s: abs((target_datetime.hour * 60 + target_datetime.minute) - (s[0] * 60 + s[1])))
+    volume_factor = nearest[2]
+    avg_hourly_attendance = avg_attendances / OPERATING_HOURS_PER_DAY
+    return round(avg_hourly_attendance * volume_factor)
+
+
+def estimate_people_waiting_series(avg_attendances: pd.Series, timestamps: pd.Series) -> pd.Series:
+    """Vectorized `estimate_people_waiting`, for filling the column across
+    millions of training rows without a per-row Python call.
+
+    Exists because training previously filled a missing `people_waiting`
+    with the *frame mean* while serving used `estimate_people_waiting` --
+    a train/serve skew found 2026-07-31 affecting 100% of the ~862k
+    `historical_real_daily_avg` rows (IALC-M carries no queue-length
+    field, so every one of them is null). That frame mean was also
+    computed over train+test together, making it a leak. Both paths now
+    call the same formula; `tests/test_feature_engineering.py` asserts
+    this matches the scalar version exactly.
+    """
+    minutes_of_day = timestamps.dt.hour * 60 + timestamps.dt.minute
+    snapshot_minutes = np.array([s[0] * 60 + s[1] for s in DIURNAL_SNAPSHOTS])
+    volume_factors = np.array([s[2] for s in DIURNAL_SNAPSHOTS])
+    nearest_index = np.abs(minutes_of_day.to_numpy()[:, None] - snapshot_minutes[None, :]).argmin(axis=1)
+    factors = volume_factors[nearest_index]
+    return ((avg_attendances.to_numpy() / OPERATING_HOURS_PER_DAY) * factors).round()
+
+
 def add_lag_rolling_features(
     frame: pd.DataFrame,
     timestamp_column: str = "sampled_at",
@@ -289,12 +340,22 @@ def add_lag_rolling_features(
 
     def _rolling_for_group(group: pd.DataFrame) -> pd.DataFrame:
         indexed = group.set_index(timestamp_column)
-        # Shift by one observation before rolling so the window only ever
-        # looks at *past* wait times, never the current (unknown) one.
-        shifted = indexed[target_column].shift(1)
+        # closed="left" makes each window [t - span, t) -- every strictly
+        # earlier observation inside the span, and never the current
+        # (unknown) one. Replaced a `shift(1).rolling(...)` on 2026-07-31,
+        # which was subtly wrong: shift(1) moves the previous observation's
+        # VALUE onto the current row's timestamp, so it always landed inside
+        # the window no matter how old it really was. A combo last seen three
+        # days ago still got that stale reading reported as its "average wait
+        # over the last hour". That was both a mislabeled feature and a third
+        # train/serve skew -- pipeline/db.py's get_rolling_wait_stats does a
+        # genuine time-bounded query at inference and correctly returns
+        # nothing when the window is empty, so training saw stale values
+        # where serving sees the fallback.
+        series = indexed[target_column]
         group = group.assign(
-            rolling_15min_avg_wait=shifted.rolling("15min").mean().to_numpy(),
-            rolling_1h_avg_wait=shifted.rolling("1h").mean().to_numpy(),
+            rolling_15min_avg_wait=series.rolling("15min", closed="left").mean().to_numpy(),
+            rolling_1h_avg_wait=series.rolling("1h", closed="left").mean().to_numpy(),
         )
         return group
 
@@ -305,11 +366,28 @@ def add_lag_rolling_features(
     # original row order so positional alignment with other columns is safe.
     frame = frame.sort_index()
 
-    fallback = frame[target_column].mean()
-    if pd.isna(fallback):
-        fallback = BASELINE_WAIT_MINUTES
-    frame["rolling_15min_avg_wait"] = frame["rolling_15min_avg_wait"].fillna(fallback)
-    frame["rolling_1h_avg_wait"] = frame["rolling_1h_avg_wait"].fillna(fallback)
+    # config.BASELINE_WAIT_MINUTES, NOT the observed mean of the target.
+    # Two bugs fixed here on 2026-07-31, both from the old
+    # `fallback = frame[target_column].mean()`:
+    #   1. Train/serve skew. api/service.py fills these same two features
+    #      with BASELINE_WAIT_MINUTES (20.0) when no recent reading exists,
+    #      while training filled them with the dataset's target mean
+    #      (~4.985) -- so the model learned "~5 means no recent data" and
+    #      was then handed 20.0 at inference, which it reads as a real
+    #      recent 20-minute wait. This affected 11.2% of training rows,
+    #      30.6% of siga_live rows, and *every* future-dated prediction
+    #      (rolling stats always fall back there). Same class of bug as the
+    #      people_waiting fallback documented in CLAUDE.md, in a different
+    #      feature.
+    #   2. Target leakage. That mean was computed over the whole frame,
+    #      train and test together, so a feature's value was derived from
+    #      held-out labels -- weak (one global constant, not per-row
+    #      information) but enough to make any metric optimistic by an
+    #      unknown amount.
+    # A fixed config constant has neither problem: identical in training
+    # and serving, and independent of the data.
+    frame["rolling_15min_avg_wait"] = frame["rolling_15min_avg_wait"].fillna(BASELINE_WAIT_MINUTES)
+    frame["rolling_1h_avg_wait"] = frame["rolling_1h_avg_wait"].fillna(BASELINE_WAIT_MINUTES)
     return frame
 
 
@@ -358,7 +436,26 @@ def build_feature_matrix(
     # .astype(float) guards against an all-NULL SQL-sourced column coming back
     # as dtype=object (fillna alone won't upcast it), which XGBoost rejects.
     frame["people_waiting"] = pd.to_numeric(frame["people_waiting"], errors="coerce")
-    frame["people_waiting"] = frame["people_waiting"].fillna(frame["people_waiting"].mean()).fillna(0).astype(float)
+    # Left as NaN when genuinely unknown -- XGBoost handles missing values
+    # natively and learns its own default split direction, which is the
+    # honest encoding of "no queue-length reading exists".
+    #
+    # Two rejected alternatives, both tried and measured on 2026-07-31:
+    #   - The original `fillna(frame["people_waiting"].mean())`: a train+test
+    #     leak, and a train/serve skew (serving derives an estimate instead).
+    #   - Filling via estimate_people_waiting_series, to mirror serving: much
+    #     worse (historical_real_daily_avg R^2 0.469 -> -1.22). That tier is
+    #     ~862k rows -- 100% of IALC-M, which carries no queue-length field --
+    #     and its label is a DAILY AVERAGE, deliberately stamped with an
+    #     arbitrary rotated hour (see pipeline/ingest_real_wait_times.py's
+    #     date.toordinal() % N). Deriving people_waiting from that arbitrary
+    #     hour's volume_factor injects a strongly hour-varying feature against
+    #     a label with no hour dependence -- noise, and shaped by the
+    #     DIURNAL_SNAPSHOTS curve that config.py flags as inverted.
+    # No skew is reintroduced: api/service.py always supplies either a live
+    # reading or an estimate, so NaN never occurs at serving time -- these
+    # rows teach the wait-level relationship, not the people_waiting one.
+    frame["people_waiting"] = frame["people_waiting"].astype(float)
 
     frame = apply_categorical_dtypes(frame)
     return frame
