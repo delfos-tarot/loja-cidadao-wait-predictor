@@ -280,6 +280,13 @@ def main() -> None:
         "model": model,
         "feature_columns": FEATURE_COLUMNS,
         "trained_at": datetime.now(timezone.utc).isoformat(),
+        # The newest sampled_at this model actually learned from. Distinct
+        # from trained_at (wall clock) and the field pipeline/forward_test.py
+        # MUST filter on: rows can be scraped while training runs, so
+        # trained_at would wrongly mark genuinely-unseen rows as seen, and a
+        # slow import would wrongly mark trained-on rows as unseen -- either
+        # way silently scoring the model against its own training data.
+        "data_cutoff": frame["sampled_at"].max().isoformat(),
         "metrics": metrics,
         "metrics_by_source": metrics_by_source,
         "train_rows": len(train_frame),
