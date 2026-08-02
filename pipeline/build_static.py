@@ -38,6 +38,12 @@ from typing import Any
 import pandas as pd
 
 from config import BRANCHES_BY_ID, REROUTE_RADIUS_KM
+from pipeline.holidays_pt import (
+    add_holiday_features,
+    holiday_closure_mask,
+    load_municipal_holidays,
+    resolve_rule,
+)
 
 IALC_BASELINE_PATH = "data/cleaned_ialc_baseline.parquet"
 OUTPUT_PATH = "site/data.js"
@@ -50,6 +56,16 @@ MIN_ATTENDANCES_FOR_STABLE_MEAN = 30
 
 SPARKLINE_WEEKS = 12
 MAX_ALTERNATIVES = 3
+
+# A branch sees roughly 10-15 holiday-adjacent days a year, so three years of
+# corpus gives ~30-45. Requiring 10 keeps the uplift a mean rather than an
+# anecdote, without discarding branches that opened partway through the span.
+MIN_ADJACENT_DAYS_FOR_UPLIFT = 10
+
+# How many years ahead the payload resolves movable municipal holidays for.
+# Two covers "this year and next", which is as far ahead as anyone plans a
+# trip to a government office.
+PLANNABLE_YEARS = 2
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -65,6 +81,58 @@ def load_stable_branch_days(path: str = IALC_BASELINE_PATH) -> pd.DataFrame:
     frame["date"] = pd.to_datetime(frame["date"])
     frame["day_of_week"] = frame["date"].dt.dayofweek
     return frame[frame["total_attendances"] >= MIN_ATTENDANCES_FOR_STABLE_MEAN].copy()
+
+
+def annotate_holidays(frame: pd.DataFrame) -> pd.DataFrame:
+    """Tags each branch-day as a holiday closure, a bridge day, or a first-day-back.
+
+    National holidays never appear in IALC-M at all (a closed branch-day is an
+    absent row, verified 2026-08-01), so `is_holiday_closure` is expected to
+    match almost nothing — it is kept as a live assertion that the assumption
+    still holds, not as a filter doing real work. A nonzero count means either
+    a branch traded through a holiday or the holiday table drifted; both are
+    worth surfacing rather than silently averaging in.
+
+    The flags that do real work are the neighbours. Measured across this
+    corpus, normalized per branch: bridge days run +26% over a branch's own
+    baseline and first-days-back +24%. Leaving them in makes every "typical
+    Tuesday" figure quietly pessimistic, which for a page whose whole job is
+    "when should I go" is the wrong direction to be wrong in.
+    """
+    frame = frame.copy()
+    frame["is_holiday_closure"] = holiday_closure_mask(frame, date_column="date")
+    # add_holiday_features works off a timestamp column; `date` is already
+    # midnight-stamped, so reusing it needs no extra normalization.
+    annotated = add_holiday_features(frame, timestamp_column="date", branch_column="branch_id")
+    frame["is_bridge_day"] = annotated["is_bridge_day"].astype(bool)
+    frame["is_post_holiday"] = annotated["is_post_holiday"].astype(bool)
+    return frame
+
+
+def resolve_municipal_dates(
+    municipal: dict[str, dict[str, Any]], frame: pd.DataFrame
+) -> dict[str, list[list[int]]]:
+    """branch_id -> [[month, day], ...] for the years a visitor can plan into.
+
+    Movable rules (11 of 76 branches) resolve to a different date each year, so
+    the payload carries resolved dates rather than a rule the page would have
+    to evaluate — keeping the Easter arithmetic in Python, where it is tested,
+    instead of reimplementing it in browser JavaScript.
+    """
+    current_year = int(pd.to_datetime(frame["date"]).max().year)
+    years = range(current_year, current_year + PLANNABLE_YEARS)
+    resolved: dict[str, list[list[int]]] = {}
+    for branch_id, rule in municipal.items():
+        dates = [resolve_rule(rule, year) for year in years]
+        pairs = sorted({(d.month, d.day) for d in dates if d is not None})
+        if pairs:
+            resolved[branch_id] = [[month, day] for month, day in pairs]
+    return resolved
+
+
+def typical_days(frame: pd.DataFrame) -> pd.DataFrame:
+    """The subset a citizen planning an ordinary visit should be shown."""
+    return frame[~(frame["is_holiday_closure"] | frame["is_bridge_day"] | frame["is_post_holiday"])]
 
 
 def branches_reporting_wait_times(frame: pd.DataFrame) -> set[str]:
@@ -86,20 +154,83 @@ def branches_reporting_wait_times(frame: pd.DataFrame) -> set[str]:
     return {str(branch_id) for branch_id, peak in observed_any_wait.items() if peak > 0}
 
 
+def branches_with_colliding_coordinates() -> set[str]:
+    """Branch ids whose geocoded point is shared with another branch.
+
+    Found 2026-07-31: five pairs sit on byte-identical coordinates --
+    Barreiro/Setúbal, Queluz/Cacém, Porto/Vila Nova de Gaia, Leiria/Ansião,
+    Viseu/Sátão. Nominatim resolved both members of each pair to the same
+    point (most are `geocode_precision == "municipality"` fallbacks), so any
+    distance computed from them is provably wrong -- Barreiro and Setúbal are
+    ~20 km apart in reality yet both report 9.8 km from Saldanha.
+
+    Such branches are excluded from *being offered* as alternatives, since a
+    reroute suggestion is only as good as its distance. They keep their own
+    page: their wait-time data is real and unaffected.
+    """
+    seen: dict[tuple[float, float], list[str]] = {}
+    for branch_id, branch in BRANCHES_BY_ID.items():
+        key = (round(branch.latitude, 4), round(branch.longitude, 4))
+        seen.setdefault(key, []).append(branch_id)
+    colliding: set[str] = set()
+    for ids in seen.values():
+        if len(ids) > 1:
+            colliding.update(ids)
+    return colliding
+
+
+# Portuguese particles stay lowercase inside a place name ("Viana do Castelo",
+# never "Viana Do Castelo") unless they open it.
+_LOWERCASE_PARTICLES = frozenset({"de", "do", "da", "dos", "das", "e"})
+
+
+def normalize_district(district: str) -> str:
+    """The registry carries both "Vila Real" and "Vila real"; without this the
+    branch picker renders two separate groups for one district."""
+    words = district.strip().split()
+    return " ".join(
+        word.lower() if index and word.lower() in _LOWERCASE_PARTICLES else word.capitalize()
+        for index, word in enumerate(words)
+    )
+
+
 def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
     """One compact record per branch. Keys are deliberately short -- this file
     is downloaded by every visitor, and the page is the only consumer."""
+    # `reporting` is judged on the FULL frame: whether a branch ever records a
+    # wait time is a property of the branch, and must not become an artifact
+    # of which days the typical-day filter happened to keep.
     reporting = branches_reporting_wait_times(frame)
-    weekday_frame = frame[frame["day_of_week"] < 5]
+    colliding = branches_with_colliding_coordinates()
+    municipal = load_municipal_holidays()
+    resolved_municipal = resolve_municipal_dates(municipal, frame)
+
+    typical = typical_days(frame)
+    weekday_frame = typical[typical["day_of_week"] < 5]
     branch_mean_wait = weekday_frame.groupby("branch_id")["avg_wait_minutes"].mean()
 
+    # Uplift on holiday-adjacent days, per branch — the number the page warns
+    # with. Computed against the branch's own typical mean so it is a real
+    # multiplier for that branch, not a national average applied blindly.
+    adjacent = frame[frame["is_bridge_day"] | frame["is_post_holiday"]]
+    adjacent_mean = adjacent.groupby("branch_id")["avg_wait_minutes"].mean()
+    typical_mean = typical.groupby("branch_id")["avg_wait_minutes"].mean()
+
     payload: dict[str, dict[str, Any]] = {}
-    for branch_id, group in frame.groupby("branch_id"):
+    for branch_id, group in typical.groupby("branch_id"):
         branch = BRANCHES_BY_ID.get(str(branch_id))
         if branch is None:
             continue
 
-        weekday_means = group[group["day_of_week"] < 5].groupby("day_of_week")["avg_wait_minutes"].mean()
+        weekday_group = group[group["day_of_week"] < 5].groupby("day_of_week")["avg_wait_minutes"]
+        weekday_means = weekday_group.mean()
+        # Interquartile range, not p10-p90: measured across the corpus, the
+        # IQR is ~50% of the mean (Saldanha on a Friday: 36-47 min against a
+        # 41 min mean) while p10-p90 is ~97%, wide enough to read as "we
+        # don't know". Half of real days land inside the IQR, which is a
+        # claim the data supports and a citizen can act on.
+        weekday_q1 = weekday_group.quantile(0.25)
+        weekday_q3 = weekday_group.quantile(0.75)
         monthly_means = group.groupby(group["date"].dt.month)["avg_wait_minutes"].mean()
         weekly_trend = (
             group.set_index("date")["avg_wait_minutes"].resample("W").mean().dropna().tail(SPARKLINE_WEEKS)
@@ -114,6 +245,9 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
             # fastest option available -- see branches_reporting_wait_times.
             if other_id not in reporting:
                 continue
+            # Its distance would be a fabrication -- see the docstring.
+            if other_id in colliding:
+                continue
             distance_km = haversine_km(branch.latitude, branch.longitude, other.latitude, other.longitude)
             if distance_km > REROUTE_RADIUS_KM:
                 continue
@@ -124,16 +258,44 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
 
         payload[str(branch_id)] = {
             "n": branch.name,
-            "d": branch.district,
+            "d": normalize_district(branch.district),
             # False => this branch reports no wait times at all; the page must
             # say "sem dados" instead of rendering a fabricated 0 min.
             "ok": str(branch_id) in reporting,
             # Mon..Fri. 0 means "no stable data for that weekday at this branch".
             "wk": [int(round(weekday_means.get(i, 0))) for i in range(5)],
+            # Mon..Fri, each [q1, q3] — the range the page actually displays.
+            "wq": [
+                [int(round(weekday_q1.get(i, 0))), int(round(weekday_q3.get(i, 0)))]
+                for i in range(5)
+            ],
             "mo": [int(round(monthly_means.get(i, 0))) for i in range(1, 13)],
             "sp": [int(round(v)) for v in weekly_trend.tolist()],
             "gu": round(100 * float(give_up_rate), 1),
             "alt": alternatives[:MAX_ALTERNATIVES],
+            # This branch's feriado municipal, RESOLVED to concrete [month, day]
+            # pairs for the years a visitor might plan into — 11 of 76 are
+            # movable (Ascensão, Segunda-feira de Páscoa, Pentecostes, Monday
+            # after the nth Sunday), so a single [month, day] would be wrong for
+            # them every year. Omitted, never guessed, where neither the corpus
+            # nor the published list could establish it; the page must treat a
+            # missing key as "unknown", not as "no municipal holiday".
+            **(
+                {"hol": resolved_municipal[str(branch_id)]}
+                if str(branch_id) in resolved_municipal
+                else {}
+            ),
+            # Multiplier on holiday-adjacent days (pontes, first day back).
+            # Emitted only where enough such days exist to be a mean rather
+            # than an anecdote.
+            **(
+                {"pon": round(float(adjacent_mean[branch_id] / typical_mean[branch_id]), 2)}
+                if branch_id in adjacent_mean.index
+                and branch_id in typical_mean.index
+                and typical_mean[branch_id] > 0
+                and len(adjacent[adjacent["branch_id"] == branch_id]) >= MIN_ADJACENT_DAYS_FOR_UPLIFT
+                else {}
+            ),
         }
     return payload
 
@@ -154,7 +316,22 @@ def build_corpus_summary(frame: pd.DataFrame) -> dict[str, Any]:
 
 
 def main() -> None:
-    frame = load_stable_branch_days()
+    frame = annotate_holidays(load_stable_branch_days())
+
+    closures = int(frame["is_holiday_closure"].sum())
+    if closures:
+        # Expected to be zero — see annotate_holidays' docstring. Loud rather
+        # than silent, because the alternative is a wrong holiday table that
+        # nothing ever contradicts.
+        print(f"warning: {closures} branch-days fall on a holiday this branch should have been closed for")
+    print(
+        f"holiday-adjacent days excluded from typical means: "
+        f"{int((frame['is_bridge_day'] | frame['is_post_holiday']).sum())} of {len(frame)}"
+    )
+
+    # The corpus summary counts everything really measured, holiday-adjacent
+    # days included — it is a statement about the record, not about a typical
+    # visit, so filtering it would understate the evidence base.
     document = {"branches": build_branch_payload(frame), "corpus": build_corpus_summary(frame)}
 
     blob = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
