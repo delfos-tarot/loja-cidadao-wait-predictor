@@ -298,6 +298,23 @@ TARGET_DESK_UTILIZATION = 0.7
 # truth (a bell-ish ramp-up/peak/wind-down shape), just at finer
 # resolution than before.
 #
+# !! SUPERSEDED 2026-08-02 — DO NOT ACT ON THE RECOMMENDATION BELOW.
+# The finding that follows was computed from `people_waiting`, and its standing
+# advice was "recalibrate against real people_waiting rather than re-guessing
+# the shape by hand". That advice is withdrawn: `people_waiting` has since
+# failed two independent checks (it reads 0.2-0.8 people at branches serving
+# 1,000+/day alongside 100-minute waits, and it runs OPPOSITE to wait across
+# the day at r = -0.587). Meanwhile the hourly wait climb it was used to
+# contradict turns out to be REAL at busy branches — it scales with branch
+# volume (+29.7 min/day at 1,058-attendance branches, -15.8 at 70-attendance
+# ones), which a broken counter could not do.
+# The blast radius is also now small: since the proxy labels were retired
+# (PROXY_LABEL_TRAINING_WEIGHT below), these volume factors no longer shape any
+# training label — they only reach `estimate_people_waiting`'s inference
+# fallback. See CLAUDE.md, "THE TWO WAIT-TIME SOURCES DO NOT MEASURE THE SAME
+# QUANTITY", for the full evidence and for what to do instead (two-stage
+# relative hour profile, not recalibration and not reweighting).
+#
 # !! OPEN FINDING (2026-07-30): REAL DATA SUGGESTS THIS CURVE IS INVERTED.
 # The first real intra-day evidence this project has ever had -- live SIGA
 # `people_waiting` counts, which (unlike tempoRealEspera) show no sign of
@@ -386,6 +403,65 @@ SNAPSHOT_WINDOW_HOURS = 1.0
 # come out unchanged.
 # --------------------------------------------------------------------------
 PROXY_WEIGHT_DECAY_ALPHA = 0.5
+
+# --------------------------------------------------------------------------
+# PROXY LABELS ARE RETIRED FROM TRAINING (2026-08-01). Set to 1.0 to restore.
+#
+# `historical_derived_proxy` labels are not measurements — they are the output
+# of the M/M/1 formula in pipeline/demand_baseline.py, computed from SLC-M
+# attendance counts. They were built as a BOOTSTRAP, when no real wait data
+# existed. That premise expired on 2026-07-27 when IALC-M was found: there are
+# now ~862k real measured branch-day waits plus live SIGA readings.
+#
+# MEASURED, not assumed. A controlled ablation (one snapshot, one split, test
+# set = REAL rows only and identical across conditions, n=181,381):
+#
+#   condition          train rows   MAE    RMSE     R2
+#   status quo          6,239,948   7.955  18.41   0.484
+#   proxy dropped         725,523   7.804  17.29   0.545
+#
+# Removing 8.6x the training data made the model BETTER on real measurements.
+# R2 is comparable here because all conditions share one test set with an
+# identical target distribution — unlike the clean_siga_live_readings change
+# documented in CLAUDE.md, where it was not.
+#
+# The feared failure mode did not occur. Segmented by how much real training
+# data each (branch, service) combo has, the THINNEST combos improved MOST:
+#   0 real train rows  (n=154):    13.17 -> 7.95 MAE   (small n; directional)
+#   1-100              (n=10,591): 13.77 -> 12.60
+#   101-500            (n=62,576):  7.19 -> 7.24       (flat)
+#   500+               (n=108,060): 7.82 -> 7.66
+#
+# The "coverage insurance" argument for keeping them is empty: of 2,303
+# (branch, service) combos, exactly ONE has proxy rows without real rows, while
+# 301 have real rows without proxy. SLC-M and IALC-M come from the same system
+# and agree on branch-days 100%, so any branch with attendance also has
+# measured waits. Nor is hour coverage lost — hours 9-16 keep 103k-111k real
+# rows each, and siga_live is the only source covering 07-08h and 17-23h at all.
+#
+# AND IT REMOVES A KNOWN FALSEHOOD AT THE ROOT: every proxy label is shaped by
+# DIURNAL_SNAPSHOTS' hand-drawn volume factors, which live `people_waiting`
+# data contradicts at r = -0.79 (see the OPEN FINDING above). Retiring the tier
+# deletes that assumption from training without a recalibration, a label
+# regeneration, or waiting weeks for more live data.
+#
+# WHAT THIS COSTS, honestly: `historical_real_daily_avg` spreads its rows
+# evenly across hours 9-16 BY DESIGN (the rotation in
+# pipeline/ingest_real_wait_times.py), so it teaches no hour relationship.
+# `hour_of_day` is therefore now learned almost entirely from siga_live —
+# ~46k usable rows over days, not years. Thin, and it stays thin until the
+# scraper accumulates. Thin-and-real was judged better than abundant-and-
+# inverted: the model now answers "what hour should I go" less confidently
+# rather than confidently backwards.
+#
+# NOTHING IS DELETED. Proxy rows remain in queue_samples and
+# pipeline/demand_baseline.py still generates them; only their training weight
+# is zero. `historical_demand_baseline` — the REAL attendance feature built by
+# the same module — is untouched and still feeds `historical_avg_attendances`.
+# Restoring is one constant, and pipeline/train.py logs the exclusion on every
+# run so it can never become silent.
+# --------------------------------------------------------------------------
+PROXY_LABEL_TRAINING_WEIGHT = 0.0
 
 # --------------------------------------------------------------------------
 # historical_real_daily_avg reliability weighting (pipeline/train.py)

@@ -8,7 +8,13 @@ import numpy as np
 import pandas as pd
 
 from pipeline.db import clean_siga_live_readings
-from pipeline.train import chronological_split_by_source, compute_sample_weights, evaluate_by_source
+from config import PROXY_LABEL_TRAINING_WEIGHT
+from pipeline.train import (
+    chronological_split_by_source,
+    compute_sample_weights,
+    drop_zero_weight_rows,
+    evaluate_by_source,
+)
 
 
 class _ConstantModel:
@@ -82,7 +88,7 @@ def test_live_rows_always_get_full_weight() -> None:
             {"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"},
         ]
     )
-    weights = compute_sample_weights(frame, alpha=0.05)
+    weights = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
     assert (weights == 1.0).all()
 
 
@@ -93,7 +99,7 @@ def test_proxy_weight_is_full_when_no_live_data_exists_for_that_combo() -> None:
             {"branch_id": "b", "desk_service_id": "other_svc", "source": "siga_live"},  # unrelated combo
         ]
     )
-    weights = compute_sample_weights(frame, alpha=0.05)
+    weights = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
     # branch a/svc has zero live samples of its own, so its proxy weight must be untouched (1.0),
     # regardless of live data existing for a completely different combo.
     assert weights[0] == 1.0
@@ -104,7 +110,7 @@ def test_proxy_weight_decays_as_that_combos_live_count_grows() -> None:
     rows += [{"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"} for _ in range(20)]
     frame = pd.DataFrame(rows)
 
-    weights = compute_sample_weights(frame, alpha=0.05)
+    weights = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
     proxy_weight = weights[0]
 
     # 1 / (1 + 0.05 * 20) = 1 / 2 = 0.5
@@ -124,7 +130,7 @@ def test_proxy_weight_decays_from_live_rows_filed_under_a_siga_specific_name(mon
     rows += [{"branch_id": "a", "desk_service_id": "Câmara - Atendimento Geral", "source": "siga_live"} for _ in range(20)]
     frame = pd.DataFrame(rows)
 
-    weights = compute_sample_weights(frame, alpha=0.05)
+    weights = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
 
     # Same 1 / (1 + 0.05 * 20) = 0.5 as if the names had matched exactly.
     assert abs(weights[0] - 0.5) < 1e-9
@@ -139,7 +145,7 @@ def test_raising_alpha_cannot_affect_a_combo_with_no_live_coverage() -> None:
     frame = pd.DataFrame([{"branch_id": "no_live", "desk_service_id": "svc", "source": "historical_derived_proxy"}])
 
     for alpha in [0.05, 0.5, 5.0, 500.0]:
-        assert compute_sample_weights(frame, alpha=alpha)[0] == 1.0
+        assert compute_sample_weights(frame, alpha=alpha, proxy_label_training_weight=1.0)[0] == 1.0
 
 
 def test_higher_alpha_decays_a_covered_combos_proxy_faster() -> None:
@@ -147,8 +153,8 @@ def test_higher_alpha_decays_a_covered_combos_proxy_faster() -> None:
     rows += [{"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"} for _ in range(30)]
     frame = pd.DataFrame(rows)
 
-    weak = compute_sample_weights(frame, alpha=0.05)[0]
-    strong = compute_sample_weights(frame, alpha=0.5)[0]
+    weak = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)[0]
+    strong = compute_sample_weights(frame, alpha=0.5, proxy_label_training_weight=1.0)[0]
 
     assert strong < weak
     assert abs(weak - 1 / (1 + 0.05 * 30)) < 1e-9
@@ -162,7 +168,7 @@ def test_proxy_weight_never_affected_by_other_combos_live_counts() -> None:
             *[{"branch_id": "b", "desk_service_id": "other_svc", "source": "siga_live"} for _ in range(500)],
         ]
     )
-    weights = compute_sample_weights(frame, alpha=0.05)
+    weights = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
     # branch a/svc's proxy row must stay at full weight no matter how much
     # live data branch b/other_svc has accumulated — this is the whole point
     # of per-combo (not global) weighting.
@@ -377,3 +383,60 @@ def test_clean_siga_live_readings_first_reading_for_a_combo_is_untouched() -> No
     cleaned = clean_siga_live_readings(frame)
 
     assert cleaned["wait_time_minutes"].iloc[0] == 450.0
+
+
+# ---------------------------------------------------------------------------
+# Proxy-label retirement (2026-08-01) — see config.PROXY_LABEL_TRAINING_WEIGHT
+# ---------------------------------------------------------------------------
+
+def test_proxy_labels_are_retired_by_default() -> None:
+    """The shipped default excludes formula-derived labels from training.
+
+    An ablation measured this as an improvement on real data (MAE 7.955 ->
+    7.804, R^2 0.484 -> 0.545, scored on real rows only). If this flips back
+    silently, the model is being trained on ~6.9M manufactured labels again --
+    including DIURNAL_SNAPSHOTS' hand-drawn hour curve that live data
+    contradicts.
+    """
+    assert PROXY_LABEL_TRAINING_WEIGHT == 0.0
+
+    frame = pd.DataFrame(
+        [
+            {"branch_id": "a", "desk_service_id": "svc", "source": "historical_derived_proxy"},
+            {"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"},
+        ]
+    )
+    weights = compute_sample_weights(frame, alpha=0.05)
+    assert weights[0] == 0.0, "proxy row should carry no training weight"
+    assert weights[1] == 1.0, "live row must be unaffected by the retirement"
+
+
+def test_retirement_leaves_the_decay_mechanism_intact_for_restore() -> None:
+    """Retiring is a multiplier, not a deletion. Setting the constant back to
+    1.0 must reproduce the previous behaviour exactly, or 'recoverable' is a
+    claim we cannot honour."""
+    rows = [{"branch_id": "a", "desk_service_id": "svc", "source": "historical_derived_proxy"}]
+    rows += [{"branch_id": "a", "desk_service_id": "svc", "source": "siga_live"} for _ in range(20)]
+    frame = pd.DataFrame(rows)
+
+    restored = compute_sample_weights(frame, alpha=0.05, proxy_label_training_weight=1.0)
+    assert abs(restored[0] - 0.5) < 1e-9  # 1 / (1 + 0.05 * 20)
+
+
+def test_real_tiers_are_never_dropped_by_the_zero_weight_filter() -> None:
+    """The filter must remove only what carries zero weight. A real row with a
+    tiny sample_size gets a SMALL weight, never zero -- dropping those would
+    silently discard genuine measurements."""
+    frame = pd.DataFrame(
+        [
+            {"branch_id": "a", "desk_service_id": "svc", "source": "historical_derived_proxy", "sample_size": 0},
+            {"branch_id": "a", "desk_service_id": "svc", "source": "historical_real_daily_avg", "sample_size": 1},
+            {"branch_id": "a", "desk_service_id": "svc", "source": "siga_live", "sample_size": 0},
+        ]
+    )
+    weights = compute_sample_weights(frame, alpha=0.05)
+    kept, kept_weights = drop_zero_weight_rows(frame, weights)
+
+    assert set(kept["source"]) == {"historical_real_daily_avg", "siga_live"}
+    assert (kept_weights > 0).all()
+    assert len(kept) == 2

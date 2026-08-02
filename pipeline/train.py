@@ -21,12 +21,16 @@ Rows are not all trusted equally — four source tiers, weighted differently
     per-row by how many real attendances backed that specific branch-day
     average (some are as low as 1).
   - `historical_derived_proxy` / `synthetic_bootstrap`: formula-derived, not
-    measured — weight decays per-(branch_id, desk_service_id) as real
-    `siga_live` coverage grows for that specific combo. Deliberately not a
-    global "drop all proxy data once N live rows exist" cutover: real
-    coverage will be extremely uneven across ~2,000 distinct combos, and a
-    global threshold would blind whichever combos haven't accumulated live
-    data yet.
+    measured — **RETIRED from training on 2026-08-01**
+    (`config.PROXY_LABEL_TRAINING_WEIGHT = 0.0`). A controlled ablation showed
+    that removing them IMPROVED accuracy on real measurements (MAE 7.955 ->
+    7.804, R^2 0.484 -> 0.545 on a real-rows-only test set), and that the
+    thinnest-coverage combos — the ones the tier existed to serve — improved
+    most. They also carry DIURNAL_SNAPSHOTS' hand-drawn hour curve, which live
+    data contradicts at r = -0.79. Nothing is deleted: the rows stay in the DB
+    and the per-combo decay below still works; restoring is one constant. See
+    config.PROXY_LABEL_TRAINING_WEIGHT for the full numbers and the honest cost
+    (hour_of_day is now supported almost entirely by siga_live).
 
 Usage:
     python -m pipeline.train
@@ -46,7 +50,13 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
-from config import DEFAULT_DB_PATH, DEFAULT_MODEL_PATH, HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE, PROXY_WEIGHT_DECAY_ALPHA
+from config import (
+    DEFAULT_DB_PATH,
+    DEFAULT_MODEL_PATH,
+    HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE,
+    PROXY_LABEL_TRAINING_WEIGHT,
+    PROXY_WEIGHT_DECAY_ALPHA,
+)
 from pipeline.db import clean_siga_live_readings, load_all_samples, load_service_crosswalk
 from pipeline.feature_engineering import FEATURE_COLUMNS, TARGET_COLUMN, QueueFeatureTransformer
 
@@ -103,6 +113,7 @@ def compute_sample_weights(
     frame: pd.DataFrame,
     alpha: float = PROXY_WEIGHT_DECAY_ALPHA,
     real_avg_reference_sample_size: float = HISTORICAL_REAL_AVG_REFERENCE_SAMPLE_SIZE,
+    proxy_label_training_weight: float = PROXY_LABEL_TRAINING_WEIGHT,
 ) -> np.ndarray:
     """Four-tier weighting by source:
 
@@ -152,10 +163,34 @@ def compute_sample_weights(
     sample_size = merged["sample_size"].fillna(0).to_numpy() if "sample_size" in merged.columns else np.zeros(len(merged))
     real_daily_avg_weight = sample_size / (sample_size + real_avg_reference_sample_size)
 
+    # Retired to 0.0 on 2026-08-01 — see config.PROXY_LABEL_TRAINING_WEIGHT for
+    # the ablation that justified it. Applied as a multiplier on top of the
+    # decay rather than replacing it, so restoring the constant to 1.0 brings
+    # back exactly the previous behaviour.
+    proxy_weight = proxy_weight * proxy_label_training_weight
+
     weights = proxy_weight
     weights = np.where(is_real_daily_avg, real_daily_avg_weight, weights)
     weights = np.where(is_live, 1.0, weights)
     return weights
+
+
+def drop_zero_weight_rows(frame: pd.DataFrame, weights: np.ndarray) -> tuple[pd.DataFrame, np.ndarray]:
+    """Removes rows XGBoost would ignore anyway.
+
+    A zero-weight row contributes nothing to the loss, so this changes no
+    result — it just avoids carrying ~6.9M retired proxy rows through the
+    split, the fit, and the metrics. Training drops from ~4 minutes to under
+    one, which is the difference between running an experiment and not
+    bothering.
+
+    Done BEFORE the chronological split on purpose: leaving proxy rows in the
+    TEST set while excluding them from training would produce a blended metric
+    dominated by rows the model was never shown — a meaningless number that
+    looks like a catastrophic regression.
+    """
+    keep = weights > 0
+    return frame.loc[keep].reset_index(drop=True), weights[keep]
 
 
 def train_model(X_train: pd.DataFrame, y_train: pd.Series, sample_weight: np.ndarray | None = None) -> XGBRegressor:
@@ -234,6 +269,33 @@ def main() -> None:
             "pipeline.load_historical -> pipeline.geocode_branches -> pipeline.demand_baseline) before training."
         )
     logger.info("Loaded %d labeled rows spanning %s to %s", len(frame), frame["sampled_at"].min(), frame["sampled_at"].max())
+
+    # Drop retired (zero-weight) rows BEFORE feature engineering, not after:
+    # the transform is the expensive step (~2 min over 7.8M rows, vs 4s for the
+    # fit itself), and there is no point enriching rows the loss will ignore.
+    # Weighting only needs source/branch/service/sample_size, all present on the
+    # raw frame. Removing them before the SPLIT also matters for correctness --
+    # leaving proxy rows in TEST while excluding them from TRAIN would produce a
+    # blended metric dominated by rows the model was never shown.
+    #
+    # Filtering here rather than after the transform is not purely an
+    # optimisation: add_lag_rolling_features computes rolling wait averages over
+    # whatever rows are present, so doing it first means rolling_15min_avg_wait /
+    # rolling_1h_avg_wait now summarise REAL observations instead of blending
+    # measured waits with formula output. Measured on retrain: MAE 7.806 ->
+    # 7.762, R^2 0.5432 -> 0.5459. Small, but in the right direction and for the
+    # right reason.
+    pre_weights = compute_sample_weights(frame, alpha=args.proxy_decay_alpha)
+    kept, _ = drop_zero_weight_rows(frame, pre_weights)
+    if len(kept) < len(frame):
+        logger.warning(
+            "EXCLUDING %d zero-weight rows from train AND test (%d -> %d). "
+            "config.PROXY_LABEL_TRAINING_WEIGHT=%.3f -- set to 1.0 to restore proxy labels.",
+            len(frame) - len(kept), len(frame), len(kept), PROXY_LABEL_TRAINING_WEIGHT,
+        )
+        for source_name, count in frame["source"].value_counts().items():
+            logger.info("  %-28s %8d -> %8d", source_name, count, int((kept["source"] == source_name).sum()))
+    frame = kept
 
     transformer = QueueFeatureTransformer()
     features = transformer.transform(frame)
