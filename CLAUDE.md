@@ -306,6 +306,28 @@ pytest -v
   observations rather than mixing in formula output (MAE 7.806 -> 7.762), and
   cuts a full retrain from ~2m36s to ~55s.
 
+  **CONFIRMED ON UNSEEN DATA (2026-08-04).** The justification above was an
+  offline ablation; a forward test then scored both artifacts on the *same*
+  27,478 rows that neither had been trained on (both from the later of the two
+  cutoffs, 2026-08-01T10:11 — scoring each from its own cutoff would have given
+  the older model ~19 extra hours the newer one trained on):
+
+      model                        MAE     RMSE    R^2     pred mean   bias
+      current (real-data only)     31.24   63.53   0.480   40.0        +1.1
+      backup  (with proxy labels)  31.35   78.15   0.214   13.7        -25.2
+      (actual mean 38.9 ± 88.1)
+
+  **The finding is calibration, not MAE.** MAE is tied — it is dominated by the
+  many low-wait rows where under-predicting costs little, and it is blind to
+  bias by construction. The proxy-trained model **under-predicts by 25 minutes**
+  (13.7 against a real 38.9), with prediction std 31.0 against an actual 88.1:
+  proxy labels are formula-generated and capped at `MAX_DERIVED_WAIT_MINUTES`,
+  so they taught a compressed, systematically low distribution. Removing them
+  let the real labels set the scale. R^2 more than doubled and RMSE fell 19%.
+  Caveat: a forward test can only ever score `siga_live` (the only source that
+  produces new rows between retrains), so this says the retirement fixed a
+  serious calibration fault — not that the model is accurate in general.
+
   The per-combo decay below is retained and still tested, since it is what a
   restore would rely on:
   `pipeline/train.py` downweights these proxy rows per-(branch, service) as
@@ -764,6 +786,41 @@ The missing observations cannot be reconstructed from this corpus.
   3. **Predict give-up rate as its own output.** Measurable across three years
      for every branch, no survivorship problem (give-ups are counted, not
      lost), no hour resolution needed, no dependency on scraper accumulation.
+
+## Forward-test reference points
+
+`pipeline/forward_test.py` is the only leakage-free measure of a deployed
+artifact. Record every run here — the whole point of a *fixed* reference is
+that runs are comparable to each other, which held-out metrics never are.
+
+    date         model                    cutoff             window   n        MAE     RMSE    R^2     bias
+    2026-08-04   real-data only (17f)     2026-08-01 10:11   75.2h    27,478   31.24   63.53   0.480   +1.1
+    2026-08-04   pre-retirement (15f)     2026-08-01 10:11   75.2h    27,478   31.35   78.15   0.214   -25.2
+
+Reading these honestly:
+  - **Live-tier only.** IALC-M arrives monthly, so between retrains every new
+    row is `siga_live`. A forward test therefore measures prediction of SIGA's
+    `tempoRealEspera` — a different quantity from the IALC-M waits that make up
+    95% of training (see the source-mismatch section). It is a real,
+    leakage-free number for a narrower thing than "wait time accuracy".
+  - **Quote the window composition**, always. The 2026-08-04 window spans a
+    Saturday afternoon, a Sunday gap (cron is Mon-Sat), and two weekdays.
+  - **Check the coverage split, not just the aggregate.** On the run above,
+    sparse combos scored MAE 47.0 against 21.7 for well-covered ones. A change
+    that helps covered combos while hurting sparse ones is invisible in the
+    headline — which is why that split exists.
+
+**`--model` reads the ARTIFACT's own `feature_columns`, never the module-level
+`FEATURE_COLUMNS`** (fixed 2026-08-04). Using the current constant made it
+impossible to score any model built before a feature change — precisely the
+comparison a forward test exists for; the 15-feature backup raised a
+`feature_names mismatch` against the 17-feature codebase. `api/service.py` had
+always done this correctly.
+
+Comparing two artifacts with different cutoffs requires scoring both from the
+LATER cutoff, or the older model is handed rows the newer one trained on.
+`forward_test.py` has no flag for this yet — the 2026-08-04 comparison was run
+with a short script against `build_forward_test_frame`.
 
 ## Backtesting the static site as a forecaster
 

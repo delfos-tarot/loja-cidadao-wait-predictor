@@ -152,7 +152,21 @@ def run_forward_test(
                 "by_source": {}, "by_coverage": {}, "trustworthy": False}
 
     model = artifact["model"]
-    predictions = model.predict(unseen[FEATURE_COLUMNS])
+    # The ARTIFACT's own feature list, never the module-level FEATURE_COLUMNS.
+    # Using the current constant makes it impossible to score a model built
+    # before a feature change — which is exactly the comparison a forward test
+    # exists for. Found 2026-08-04 trying to score the pre-holiday backup
+    # (15 features) against a 17-feature codebase: XGBoost raised a
+    # feature_names mismatch and the head-to-head was unrunnable.
+    # api/service.py has always read the artifact's list; this now matches it.
+    feature_columns = artifact.get("feature_columns", FEATURE_COLUMNS)
+    missing = [column for column in feature_columns if column not in unseen.columns]
+    if missing:
+        raise SystemExit(
+            f"{model_path} needs feature(s) the current pipeline no longer produces: {missing}. "
+            "Scoring it would require the feature engineering it was trained with."
+        )
+    predictions = model.predict(unseen[feature_columns])
     unseen = unseen.assign(_prediction=predictions)
 
     window_hours = float((unseen["sampled_at"].max() - unseen["sampled_at"].min()).total_seconds() / 3600)
