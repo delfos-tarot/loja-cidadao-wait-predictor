@@ -838,12 +838,39 @@ ever checked it. Result over 10 windows x 30 days:
     naive_persistence                    MAE 8.566
 
 Three findings that should temper what the page claims:
-  - **Recent history beats all history.** Averaging the last 8 occurrences of a
-    weekday beats a three-year mean by ~0.4-0.55 min. `build_static.py` has NOT
-    been switched to this yet. `RECENT_WINDOW_OCCURRENCES` was validated across
-    10x30d / 6x60d / 4x90d rather than taking the argmin of one run — that
-    first pass suggested 12 and a 0.85 min gain, which was the constant
-    overfitting its own scoring windows.
+  - **Recent history beats all history — APPLIED 2026-08-04.** Averaging the
+    last 8 occurrences of a weekday beats a three-year mean by ~0.4-0.55 min.
+    `build_static.py` now uses it (`RECENT_WEEKDAY_OCCURRENCES`, kept in sync
+    with `backtest_site.RECENT_WINDOW_OCCURRENCES`, which is what validates
+    it). The constant was validated across 10x30d / 6x60d / 4x90d rather than
+    taking the argmin of one run — a first pass suggested 12 and a 0.85 min
+    gain, which was the constant overfitting its own scoring windows.
+
+    **This is a bigger user-visible change than the holiday work: it moved the
+    recommended best weekday for 44 of 78 branches** (mean shift 4.84 min, max
+    51). Numbers generally rose, because the last 8 occurrences land in
+    June-July — real months that are above the annual mean, which is exactly
+    the drift a three-year average was hiding.
+
+    Three consequences worth knowing:
+      1. **The site now REQUIRES regular rebuilds.** An all-history mean
+         degraded gracefully when stale; a recent-window mean does not — left
+         unrebuilt it becomes a confident snapshot of a season that has passed.
+         Rebuild whenever `load_ialc` pulls a new month.
+      2. **The IQR band uses a longer window than the mean**
+         (`BAND_WINDOW_OCCURRENCES = 26`). Quartiles from 8 points are noise.
+         The backtest scored point predictions only, so the band's window is a
+         stability judgement, not a measured result — do not "fix" the
+         inconsistency by pointing both at the same constant.
+      3. **Reroute alternatives use the same recent basis.** Ranking on a
+         three-year mean while displaying a recent-window mean would let the
+         page recommend a branch on evidence it does not show.
+
+    Edge case, checked and left alone: for very sparse branches the "last 8
+    occurrences" can reach back years — 6 of 386 branch-weekdays exceed one
+    year, all at Águeda, Freixo de Espada à Cinta and Palmela Móvel, which
+    other guards already handle (`branches_reporting_wait_times`, the mobile-
+    unit exclusion). 95% of branch-weekdays span <=102 days.
   - **The holiday-adjacent exclusion does not improve forecast accuracy**
     (6.797 vs 6.821 — noise). It changes which weekday is recommended for 8 of
     78 branches and is defensible as "describe an ordinary visit", but it is a

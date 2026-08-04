@@ -67,6 +67,21 @@ MIN_ADJACENT_DAYS_FOR_UPLIFT = 10
 # trip to a government office.
 PLANNABLE_YEARS = 2
 
+# Occurrences of a given weekday averaged for the headline number. Measured by
+# pipeline/backtest_site.py, not chosen: MAE is U-shaped in this value (too few
+# = noisy, too many = stale), and 8 was validated across 10x30d / 6x60d / 4x90d
+# rather than by taking one run's argmin — a first pass suggested 12 and a
+# larger gain, which was the constant overfitting its own scoring windows.
+# Roughly two months of history. Keep this in sync with
+# backtest_site.RECENT_WINDOW_OCCURRENCES, which is what validates it.
+RECENT_WEEKDAY_OCCURRENCES = 8
+
+# Occurrences used for the displayed IQR band. Deliberately larger than the
+# mean's window: a quartile estimated from 8 points is noise. Not backtested —
+# the backtest scored point predictions, and there is no equivalent measurement
+# for interval width here, so this is a stability judgement, not a result.
+BAND_WINDOW_OCCURRENCES = 26
+
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -206,8 +221,15 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
     resolved_municipal = resolve_municipal_dates(municipal, frame)
 
     typical = typical_days(frame)
-    weekday_frame = typical[typical["day_of_week"] < 5]
-    branch_mean_wait = weekday_frame.groupby("branch_id")["avg_wait_minutes"].mean()
+    # The reroute comparison uses the SAME recent basis as the headline
+    # numbers. Ranking alternatives on a three-year mean while showing a
+    # recent-window mean would let the page recommend a branch on evidence it
+    # does not display — and the whole point of the recent window is that the
+    # older number can be stale.
+    weekday_frame = typical[typical["day_of_week"] < 5].sort_values("date")
+    branch_mean_wait = weekday_frame.groupby("branch_id")["avg_wait_minutes"].apply(
+        lambda s: s.tail(RECENT_WEEKDAY_OCCURRENCES * 5).mean()
+    )
 
     # Uplift on holiday-adjacent days, per branch — the number the page warns
     # with. Computed against the branch's own typical mean so it is a real
@@ -222,15 +244,32 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
         if branch is None:
             continue
 
-        weekday_group = group[group["day_of_week"] < 5].groupby("day_of_week")["avg_wait_minutes"]
-        weekday_means = weekday_group.mean()
+        weekday_frame_branch = group[group["day_of_week"] < 5].sort_values("date")
+        # RECENT window, not all history — measured, not assumed. A
+        # rolling-origin backtest over 10 windows x 30 days
+        # (pipeline/backtest_site.py) found the last-N-occurrences mean beats a
+        # three-year mean 6.244 vs 6.797 MAE, winning 9 of 10 windows. Waits
+        # drift; a three-year average partly describes a branch that no longer
+        # exists. N validated across three window configurations rather than
+        # taken from one run's argmin — see RECENT_WEEKDAY_OCCURRENCES.
+        weekday_means = weekday_frame_branch.groupby("day_of_week")["avg_wait_minutes"].apply(
+            lambda s: s.tail(RECENT_WEEKDAY_OCCURRENCES).mean()
+        )
         # Interquartile range, not p10-p90: measured across the corpus, the
         # IQR is ~50% of the mean (Saldanha on a Friday: 36-47 min against a
         # 41 min mean) while p10-p90 is ~97%, wide enough to read as "we
         # don't know". Half of real days land inside the IQR, which is a
         # claim the data supports and a citizen can act on.
-        weekday_q1 = weekday_group.quantile(0.25)
-        weekday_q3 = weekday_group.quantile(0.75)
+        #
+        # The BAND uses a longer window than the mean, deliberately. Quartiles
+        # from 8 points are noise — you cannot estimate a spread from the same
+        # handful of observations that barely pin down a centre. The backtest
+        # validated the MEAN only; no equivalent evidence exists for the band,
+        # so it takes the widest window that is still recent rather than
+        # inheriting a number tuned for a different quantity.
+        band_group = weekday_frame_branch.groupby("day_of_week")["avg_wait_minutes"]
+        weekday_q1 = band_group.apply(lambda s: s.tail(BAND_WINDOW_OCCURRENCES).quantile(0.25))
+        weekday_q3 = band_group.apply(lambda s: s.tail(BAND_WINDOW_OCCURRENCES).quantile(0.75))
         monthly_means = group.groupby(group["date"].dt.month)["avg_wait_minutes"].mean()
         weekly_trend = (
             group.set_index("date")["avg_wait_minutes"].resample("W").mean().dropna().tail(SPARKLINE_WEEKS)
