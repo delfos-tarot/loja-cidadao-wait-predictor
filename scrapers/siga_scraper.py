@@ -66,6 +66,9 @@ CSV_FIELDS = [
     "branch_id", "desk_service_id", "sampled_at", "people_waiting",
     "last_ticket_called", "estimated_wait_minutes", "source", "is_open",
     "raw_wait_time_minutes",
+    # Appended 2026-08-05 — _migrate_csv_header_if_needed rewrites an existing
+    # file's header and pads old rows, so this is a safe pure append.
+    "opening_hours", "service_state", "reported_service_minutes", "web_ticketing",
 ]
 
 
@@ -129,7 +132,8 @@ def poll_once(
                 continue  # not one of our reconciled branches — out of scope
 
             servico = location.get("servico", {})
-            is_open = servico.get("estado") != CLOSED_STATE
+            state = servico.get("estado")
+            is_open = state != CLOSED_STATE
 
             raw_wait_minutes = servico.get("tempoRealEspera") if is_open else None
             # See module + config docstrings: real tempoRealEspera readings
@@ -154,6 +158,14 @@ def poll_once(
                     source="siga_live",
                     is_open=is_open,
                     raw_wait_time_minutes=raw_wait_minutes,
+                    # Captured regardless of open/closed: `horario` is a
+                    # schedule, so it is exactly as true at 22:00 as at noon,
+                    # and it is the field that replaces config.py's hardcoded
+                    # Mon-Fri 9-17 assumption. See schemas.QueueReading.
+                    opening_hours=servico.get("horario") or None,
+                    service_state=state,
+                    reported_service_minutes=servico.get("tempoMedAtendimento") if is_open else None,
+                    web_ticketing=servico.get("senhaWeb"),
                 )
             )
 

@@ -8,7 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from pipeline.db import get_connection, get_rolling_wait_stats, insert_queue_samples, load_all_samples, load_service_crosswalk, upsert_branch
+import sqlite3
+from datetime import datetime, timezone
+
+from pipeline.db import get_connection, get_rolling_wait_stats, init_db, insert_queue_samples, load_all_samples, load_service_crosswalk, upsert_branch
 from schemas import QueueReading
 
 
@@ -130,3 +133,45 @@ def test_load_all_samples_does_not_rename_service_names(tmp_path) -> None:
     frame = load_all_samples(db_path)
 
     assert frame["desk_service_id"].tolist() == ["Câmara - Atendimento Geral"]
+
+
+def test_new_live_columns_round_trip(tmp_path) -> None:
+    """Fields added 2026-08-05 must survive insert and read-back. Without this,
+    the scraper could capture them and the DB silently drop them."""
+    from schemas import QueueReading
+
+    db = str(tmp_path / "q.db")
+    with get_connection(db) as connection:
+        upsert_branch(connection, "branch_a", "Branch A", "Lisboa", 38.7, -9.1)
+        insert_queue_samples(connection, [
+            QueueReading(
+                branch_id="branch_a", desk_service_id="svc",
+                sampled_at=datetime(2026, 8, 5, 10, 0, tzinfo=timezone.utc),
+                people_waiting=2, last_ticket_called=None, estimated_wait_minutes=12.0,
+                source="siga_live", is_open=True,
+                opening_hours="09:00 - 12:30", service_state="SENHA MANUAL",
+                reported_service_minutes=8.0, web_ticketing=False,
+            )
+        ])
+    with sqlite3.connect(db) as connection:
+        row = connection.execute(
+            "SELECT opening_hours, service_state, reported_service_minutes, web_ticketing "
+            "FROM queue_samples"
+        ).fetchone()
+    assert row == ("09:00 - 12:30", "SENHA MANUAL", 8.0, 0)
+
+
+def test_migration_adds_columns_to_a_preexisting_db(tmp_path) -> None:
+    """An existing DB predates these columns. init_db must ALTER them in rather
+    than requiring a rebuild — the live corpus is not regenerable."""
+    db = str(tmp_path / "old.db")
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "CREATE TABLE queue_samples (id INTEGER PRIMARY KEY AUTOINCREMENT, branch_id TEXT NOT NULL, "
+            "desk_service_id TEXT NOT NULL, sampled_at TEXT NOT NULL, people_waiting INTEGER, "
+            "last_ticket_called TEXT, wait_time_minutes REAL, source TEXT NOT NULL DEFAULT 'siga_live')"
+        )
+    init_db(db)
+    with sqlite3.connect(db) as connection:
+        columns = {r[1] for r in connection.execute("PRAGMA table_info(queue_samples)")}
+    assert {"opening_hours", "service_state", "reported_service_minutes", "web_ticketing"} <= columns

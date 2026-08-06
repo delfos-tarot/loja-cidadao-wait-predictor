@@ -112,3 +112,85 @@ def test_poll_once_sets_both_fields_none_when_closed() -> None:
     assert readings[0].estimated_wait_minutes is None
     assert readings[0].raw_wait_time_minutes is None
     assert readings[0].is_open is False
+
+
+# ---------------------------------------------------------------------------
+# Fields SIGA returns that the scraper discarded until 2026-08-05
+# ---------------------------------------------------------------------------
+
+class _StubClient:
+    """Returns one location with the exact `servico` shape a real GetLocais
+    response carries — captured by probing the live API on 2026-08-05."""
+
+    def __init__(self, servico: dict) -> None:
+        self._servico = servico
+        self.calls = 0
+
+    def get_locais(self, *_args, **_kwargs):
+        self.calls += 1
+        return [{"id": 999, "nome": "Loja X", "servico": self._servico}] if self.calls == 1 else []
+
+
+_REAL_SERVICO = {
+    "estado": "SENHA MANUAL",
+    "horario": "09:00 - 12:30",
+    "horarioInfoApp": "",
+    "id": 1175,
+    "idEntidade": 33,
+    "idInstituicao": 2,
+    "nome": "Atendimento com Marcação",
+    "senhaWeb": False,
+    "tempoMedAtendimento": 8,
+    "tempoRealEspera": 0,
+    "utentesEmEspera": 0,
+}
+
+
+def _poll(servico: dict):
+    from scrapers.siga_scraper import poll_once
+
+    query = {"distrito_id": 1, "entidade_id": 33, "senha_id": 1175, "senha_nome": "X"}
+    return poll_once(_StubClient(servico), [query], {999: "branch_a"})
+
+
+def test_scraper_captures_real_opening_hours() -> None:
+    """The field that replaces config.py's hardcoded Mon-Fri 9-17. A 282-record
+    sample found 17 distinct real schedules, the commonest closing at 12:30 —
+    five hours before the assumption."""
+    reading = _poll(_REAL_SERVICO)[0]
+    assert reading.opening_hours == "09:00 - 12:30"
+
+
+def test_scraper_keeps_the_full_state_string_not_just_a_boolean() -> None:
+    reading = _poll(_REAL_SERVICO)[0]
+    assert reading.service_state == "SENHA MANUAL"
+    assert reading.is_open is True, "'SENHA MANUAL' is a manual-ticketing desk, not a closed one"
+
+
+def test_opening_hours_captured_even_when_the_desk_is_closed() -> None:
+    """A schedule is as true at 22:00 as at noon. Gating it on is_open would
+    mean only ever learning the hours of desks that happen to be open."""
+    reading = _poll({**_REAL_SERVICO, "estado": "FECHADO"})[0]
+    assert reading.opening_hours == "09:00 - 12:30"
+    assert reading.is_open is False
+    # Live counters, by contrast, mean nothing on a closed desk.
+    assert reading.reported_service_minutes is None
+    assert reading.people_waiting is None
+
+
+def test_reported_service_minutes_is_captured_untrusted() -> None:
+    """Captured so it CAN be evaluated later; never filtered on the way in.
+    A 282-record sample gave median 318 min against IALC-M's measured 7.2, so
+    no consumer should read it yet — but a field not captured cannot be
+    assessed at all, which is how last_ticket_called ended up 100% empty."""
+    reading = _poll({**_REAL_SERVICO, "estado": "ABERTO", "tempoMedAtendimento": 2476})[0]
+    assert reading.reported_service_minutes == 2476, "stored raw, not filtered or clamped"
+
+
+def test_missing_optional_fields_degrade_to_none() -> None:
+    """An older or partial SIGA response must not break a sweep."""
+    reading = _poll({"estado": "ABERTO", "nome": "Y", "utentesEmEspera": 3})[0]
+    assert reading.opening_hours is None
+    assert reading.reported_service_minutes is None
+    assert reading.web_ticketing is None
+    assert reading.people_waiting == 3
