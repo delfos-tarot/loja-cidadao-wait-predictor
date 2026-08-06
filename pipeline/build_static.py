@@ -82,6 +82,17 @@ RECENT_WEEKDAY_OCCURRENCES = 8
 # for interval width here, so this is a stability judgement, not a result.
 BAND_WINDOW_OCCURRENCES = 26
 
+# A branch needs this many out-of-sample forecasts before it gets its OWN
+# prediction interval; below it, the national multiplier applies. 200 is ~1
+# year of one weekday, enough for a stable 10th/90th percentile.
+MIN_FORECASTS_FOR_INTERVAL = 200
+
+# Above this relative width (hi - lo), a branch's interval is too wide to be
+# worth printing as a range. Those branches are flagged volatile instead: for a
+# 12-minute branch, "typically 12 min, varies a lot" is honest and sufficient,
+# whereas "0-28 min" is false precision dressed as rigour.
+MAX_USEFUL_INTERVAL_WIDTH = 1.1
+
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -143,6 +154,62 @@ def resolve_municipal_dates(
         if pairs:
             resolved[branch_id] = [[month, day] for month, day in pairs]
     return resolved
+
+
+def prediction_intervals(frame: pd.DataFrame) -> tuple[dict[str, list[float]], list[float], float]:
+    """Per-branch 80% prediction intervals, measured rather than assumed.
+
+    Rolls the site's own forecast forward over the whole corpus (each branch-day
+    predicted from ONLY its prior same-weekdays), records how wrong it actually
+    was, and takes the 10th/90th percentiles of actual/predicted as a
+    multiplier. Returns (per_branch, national_fallback, measured_coverage).
+
+    WHY PER BRANCH, AND WHY THIS IS THE ONE PLACE IT HELPS. A single national
+    multiplier measured x[0.55, 1.55] — Saldanha's typical 43 min became a
+    useless "25-72". Per branch it is x[0.77, 1.26], i.e. 33-54. The national
+    figure was wide because it averaged in branches like Tarouca (5 min
+    typical), where any absolute variation is proportionally enormous.
+
+    Note this is the OPPOSITE of what happened with the live view's dimensions,
+    and the distinction is worth keeping straight: an interval POOLS across all
+    of a branch's days to estimate two numbers, so more branch data helps.
+    Adding a dimension SPLITS the data into more cells, so restricting to big
+    branches does not help at all (measured: 1.8 readings/cell at any scope).
+
+    IRREDUCIBLE, NOT A MODELLING FAILURE: giving the forecast oracle knowledge
+    of each branch-weekday's true mean barely moves the interval (x[0.51, 1.54]
+    vs x[0.55, 1.55]). The width is real day-to-day variation in the world. No
+    model narrows it — which is exactly why publishing it honestly matters more
+    than trying to shrink it.
+    """
+    working = frame[frame["day_of_week"] < 5].sort_values("date").copy()
+    working["_pred"] = working.groupby(["branch_id", "day_of_week"])["avg_wait_minutes"].transform(
+        lambda series: series.shift(1).rolling(RECENT_WEEKDAY_OCCURRENCES, min_periods=3).mean()
+    )
+    scored = working.dropna(subset=["_pred"])
+    scored = scored[scored["_pred"] > 0]
+    scored = scored.assign(_ratio=scored["avg_wait_minutes"] / scored["_pred"])
+
+    national = [round(float(scored["_ratio"].quantile(q)), 3) for q in (0.10, 0.90)]
+
+    per_branch: dict[str, list[float]] = {}
+    for branch_id, group in scored.groupby("branch_id"):
+        if len(group) < MIN_FORECASTS_FOR_INTERVAL:
+            continue  # falls back to the national multiplier
+        per_branch[str(branch_id)] = [
+            round(float(group["_ratio"].quantile(0.10)), 3),
+            round(float(group["_ratio"].quantile(0.90)), 3),
+        ]
+
+    # Coverage is the claim being made ("80% of weekdays"), so it is measured
+    # rather than asserted — an interval whose coverage is not checked is
+    # decoration.
+    lows = scored["branch_id"].astype(str).map(lambda b: per_branch.get(b, national)[0])
+    highs = scored["branch_id"].astype(str).map(lambda b: per_branch.get(b, national)[1])
+    inside = (scored["avg_wait_minutes"] >= scored["_pred"] * lows.to_numpy()) & (
+        scored["avg_wait_minutes"] <= scored["_pred"] * highs.to_numpy()
+    )
+    return per_branch, national, round(float(inside.mean()), 3)
 
 
 def typical_days(frame: pd.DataFrame) -> pd.DataFrame:
@@ -221,6 +288,7 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
     resolved_municipal = resolve_municipal_dates(municipal, frame)
 
     typical = typical_days(frame)
+    branch_intervals, national_interval, interval_coverage = prediction_intervals(typical)
     # The reroute comparison uses the SAME recent basis as the headline
     # numbers. Ranking alternatives on a three-year mean while showing a
     # recent-window mean would let the page recommend a branch on evidence it
@@ -327,6 +395,15 @@ def build_branch_payload(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
             # Multiplier on holiday-adjacent days (pontes, first day back).
             # Emitted only where enough such days exist to be a mean rather
             # than an anecdote.
+            # Measured 80% prediction interval as [lo, hi] MULTIPLIERS on each
+            # weekday number — the page multiplies rather than storing 5 pairs.
+            # `vol` marks a branch whose interval is too wide to state as a
+            # range; the page should say "varies a lot" instead of printing one.
+            "iv": branch_intervals.get(str(branch_id), national_interval),
+            **({"vol": 1} if (
+                (branch_intervals.get(str(branch_id), national_interval)[1]
+                 - branch_intervals.get(str(branch_id), national_interval)[0])
+                > MAX_USEFUL_INTERVAL_WIDTH) else {}),
             **(
                 {"pon": round(float(adjacent_mean[branch_id] / typical_mean[branch_id]), 2)}
                 if branch_id in adjacent_mean.index
@@ -371,7 +448,15 @@ def main() -> None:
     # The corpus summary counts everything really measured, holiday-adjacent
     # days included — it is a statement about the record, not about a typical
     # visit, so filtering it would understate the evidence base.
-    document = {"branches": build_branch_payload(frame), "corpus": build_corpus_summary(frame)}
+    branches = build_branch_payload(frame)
+    _, national_interval, interval_coverage = prediction_intervals(typical_days(frame))
+    corpus = build_corpus_summary(frame)
+    corpus["interval_national"] = national_interval
+    corpus["interval_coverage"] = interval_coverage
+    volatile = sum(1 for entry in branches.values() if entry.get("vol"))
+    print(f"prediction intervals: national x{national_interval}, measured coverage "
+          f"{100*interval_coverage:.1f}% (claims 80%); {volatile} branches flagged too volatile to state a range")
+    document = {"branches": branches, "corpus": corpus}
 
     blob = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
     output = Path(OUTPUT_PATH)
