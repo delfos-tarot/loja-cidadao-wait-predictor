@@ -49,7 +49,11 @@ CREATE TABLE IF NOT EXISTS queue_samples (
     source TEXT NOT NULL DEFAULT 'siga_live',
     is_open INTEGER,
     raw_wait_time_minutes REAL,
-    sample_size INTEGER
+    sample_size INTEGER,
+    opening_hours TEXT,
+    service_state TEXT,
+    reported_service_minutes REAL,
+    web_ticketing INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_queue_samples_lookup
@@ -71,6 +75,20 @@ def init_db(db_path: str) -> None:
             connection.execute("ALTER TABLE queue_samples ADD COLUMN sample_size INTEGER")
         except sqlite3.OperationalError:
             pass  # column already exists
+        # Added 2026-08-05: SIGA returns these on every servico object and the
+        # scraper had been discarding them. Existing rows keep NULL — the
+        # history genuinely was not captured and must not be back-filled with
+        # a guess.
+        for column, sql_type in (
+            ("opening_hours", "TEXT"),
+            ("service_state", "TEXT"),
+            ("reported_service_minutes", "REAL"),
+            ("web_ticketing", "INTEGER"),
+        ):
+            try:
+                connection.execute(f"ALTER TABLE queue_samples ADD COLUMN {column} {sql_type}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 @contextmanager
@@ -111,8 +129,9 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
         """
         INSERT INTO queue_samples
             (branch_id, desk_service_id, sampled_at, people_waiting,
-             last_ticket_called, wait_time_minutes, source, is_open, raw_wait_time_minutes, sample_size)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             last_ticket_called, wait_time_minutes, source, is_open, raw_wait_time_minutes, sample_size,
+             opening_hours, service_state, reported_service_minutes, web_ticketing)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             reading.branch_id,
@@ -125,6 +144,10 @@ def insert_queue_sample(connection: sqlite3.Connection, reading: QueueReading) -
             None if reading.is_open is None else int(reading.is_open),
             reading.raw_wait_time_minutes,
             reading.sample_size,
+            reading.opening_hours,
+            reading.service_state,
+            reading.reported_service_minutes,
+            None if reading.web_ticketing is None else int(reading.web_ticketing),
         ),
     )
 

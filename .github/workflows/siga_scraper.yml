@@ -62,13 +62,25 @@ jobs:
           # after. Rebase onto whatever landed in between and retry a few
           # times before giving up, so a collision costs a few seconds' delay
           # instead of an entire run's worth of scraped data.
+          # .gitattributes marks this CSV `merge=union`, so overlapping
+          # appends auto-resolve by keeping both runs' rows rather than
+          # conflicting. Before that, 6% of runs (13/200) died here on
+          # "CONFLICT (content): Merge conflict in data/live_samples.csv" and
+          # lost their whole sweep -- four such failures on 2026-08-06 cut that
+          # day's collection short at 16:01 instead of ~19:00.
           for i in 1 2 3 4 5; do
             if git push; then
               exit 0
             fi
             echo "Push rejected (attempt $i/5), fetching and rebasing..."
             git fetch origin main
-            git rebase origin/main
+            if ! git rebase origin/main; then
+              # A rebase left mid-conflict poisons every later attempt: the old
+              # code retried INSIDE the broken rebase state and burned all five
+              # tries on one collision. Abort so the next iteration starts clean.
+              echo "Rebase conflicted despite union merge; aborting and retrying"
+              git rebase --abort || true
+            fi
             sleep $((RANDOM % 10 + 1))
           done
           echo "::error::Failed to push after 5 attempts"

@@ -37,6 +37,7 @@ from config import (
     IRS_DEADLINE_MONTH_DAY,
     OPERATING_HOURS_PER_DAY,
 )
+from pipeline.holidays_pt import add_holiday_features, holiday_closure_mask, is_closed_for_holiday
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,12 @@ FEATURE_COLUMNS: list[str] = [
     "month",
     "is_weekend",
     "is_payday_week",
+    # Holiday-adjacent days, not holidays themselves — a holiday row does not
+    # exist in this corpus, so `is_holiday` would be constant-0 and
+    # unlearnable. Holidays act on `is_open` instead. Both flags below carry a
+    # large measured effect (~+25% wait each); see pipeline/holidays_pt.py.
+    "is_bridge_day",
+    "is_post_holiday",
     "days_until_irs_deadline",
     "days_until_imi_deadline",
     "rain_mm",
@@ -81,9 +88,17 @@ def add_calendar_features(frame: pd.DataFrame, timestamp_column: str = "sampled_
     return frame
 
 
-def estimate_is_open_heuristic(timestamp) -> bool:
+def estimate_is_open_heuristic(timestamp, branch_id: str | None = None) -> bool:
     """Scalar counterpart to add_is_open_feature's vectorized heuristic, used
-    by the API for single-datetime lookups. Keep the two in sync."""
+    by the API for single-datetime lookups. Keep the two in sync.
+
+    `branch_id` is optional so existing callers keep working, but passing it
+    is what makes the holiday check municipality-aware — without it only
+    national holidays are caught, and a Porto branch still reports as open on
+    São João.
+    """
+    if is_closed_for_holiday(branch_id, timestamp.date()):
+        return False
     return (
         timestamp.weekday() in ASSUMED_BUSINESS_DAYS
         and ASSUMED_BUSINESS_HOUR_START <= timestamp.hour < ASSUMED_BUSINESS_HOUR_END
@@ -95,6 +110,12 @@ def add_is_open_feature(frame: pd.DataFrame, timestamp_column: str = "sampled_at
     live siga_live polling); falls back to a fixed Mon-Fri/9-17 heuristic
     otherwise (config.ASSUMED_BUSINESS_*), since no real per-branch schedule
     data exists yet for historical_derived_proxy/synthetic_bootstrap rows.
+
+    National and municipal holidays close the branch in the *heuristic* only.
+    A real observed value still wins: if live SIGA polling reports a desk open
+    on a holiday, that is a measurement and this is a calendar guess, so the
+    measurement is kept. Ordering matters here — the holiday mask is folded
+    into `heuristic` before `fillna`, never applied to the merged result.
     """
     frame = frame.copy()
     timestamps = pd.to_datetime(frame[timestamp_column], utc=True)
@@ -102,6 +123,10 @@ def add_is_open_feature(frame: pd.DataFrame, timestamp_column: str = "sampled_at
         timestamps.dt.dayofweek.isin(ASSUMED_BUSINESS_DAYS)
         & (timestamps.dt.hour >= ASSUMED_BUSINESS_HOUR_START)
         & (timestamps.dt.hour < ASSUMED_BUSINESS_HOUR_END)
+        & ~holiday_closure_mask(
+            frame.assign(_holiday_date=timestamps.dt.date),
+            date_column="_holiday_date",
+        )
     ).astype(int)
 
     if "is_open" in frame.columns:
@@ -421,6 +446,7 @@ def build_feature_matrix(
     every column in FEATURE_COLUMNS.
     """
     frame = add_calendar_features(frame)
+    frame = add_holiday_features(frame)
     frame = add_is_open_feature(frame)
     frame = add_tax_deadline_features(frame)
     frame = add_demand_baseline_feature(frame, db_path=db_path)

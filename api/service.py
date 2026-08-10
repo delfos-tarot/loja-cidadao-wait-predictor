@@ -47,6 +47,7 @@ from pipeline.feature_engineering import (
     estimate_people_waiting,
     estimate_is_open_heuristic,
 )
+from pipeline.holidays_pt import add_holiday_features
 
 logger = logging.getLogger(__name__)
 
@@ -190,19 +191,31 @@ class PredictionService:
         closed branch), and find_smart_reroute (to exclude closed
         candidates) — all three must agree, or a closed candidate could
         look like an attractive "0 minute wait" alternative.
+
+        Passing `branch_id` into the heuristic is what makes holidays
+        municipality-aware. Without it the fallback answers "open" on 24 June
+        for a Porto branch (São João) and would then offer that shut branch as
+        a fast reroute target — the exact failure this method exists to
+        prevent, arriving via the calendar instead of via live state.
         """
         is_near_now = abs((datetime.now(timezone.utc) - target_datetime).total_seconds()) <= NEAR_NOW_WINDOW_MINUTES * 60
         if is_near_now:
             live_is_open = get_latest_open_status(self.db_path, branch_id, desk_service_id)
             if live_is_open is not None:
                 return live_is_open, True
-        return estimate_is_open_heuristic(target_datetime), False
+        return estimate_is_open_heuristic(target_datetime, branch_id), False
 
     def _build_features(self, branch_id: str, desk_service_id: str, target_datetime: datetime) -> _FeatureBuildResult:
         is_open, used_live_is_open = self.get_is_open(branch_id, desk_service_id, target_datetime)
 
         row = pd.DataFrame([{"branch_id": branch_id, "desk_service_id": desk_service_id, "sampled_at": target_datetime}])
         row = add_calendar_features(row)
+        # Must run before `row[self.feature_columns]` below, and must use the
+        # same function training uses -- this path assembles its feature row by
+        # hand rather than via build_feature_matrix, so any calendar signal
+        # added there has to be mirrored here or serving silently drifts from
+        # training. `branch_id` is on the row, so municipal holidays apply.
+        row = add_holiday_features(row)
         row["is_open"] = int(is_open)
         row = add_tax_deadline_features(row)
 

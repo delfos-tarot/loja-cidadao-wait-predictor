@@ -37,9 +37,28 @@ full operating day, since a snapshot represents an hour-scale slice of
 demand — reusing the full day's capacity there would make every snapshot
 look far under capacity and erase the variance this expansion is for.
 
-Replace these bootstrap rows with real siga_live measurements as soon as live
-polling has accumulated enough history; pipeline/train.py downweights proxy
-rows per-(branch, service) as real coverage grows for that combo.
+*** THE PROXY LABELS IN (2) ARE RETIRED AND NO LONGER GENERATED (2026-08-01). ***
+Job (1), the real demand-baseline feature, is UNAFFECTED and still runs — it is
+built from measured attendance counts and remains a genuine feature.
+
+Only the wait-time labels are gated, on config.PROXY_LABEL_TRAINING_WEIGHT, the
+same constant that controls their training weight — so generation and weighting
+can never disagree and no orphaned rows are left behind. A controlled ablation
+found the model got BETTER on real measurements without them (MAE 7.955 ->
+7.804, R^2 0.484 -> 0.545 on a real-rows-only test set of 181,381), including
+for the thinnest-coverage combos the tier was supposed to serve. They also
+carry DIURNAL_SNAPSHOTS' hand-drawn hour curve, which live people_waiting data
+contradicts at r = -0.79.
+
+Generating ~6.9M rows nobody reads is not free: they dominated a 1.8GB SQLite
+file and were rebuilt on every pipeline run. The stale-row DELETE still runs
+unconditionally, so re-running this module clears them rather than leaving
+orphaned state that training ignores but ad-hoc queries still pick up.
+
+`derive_proxy_readings` below is deliberately KEPT and still unit-tested — code
+is cheap to retain and is what makes this reversible; rows are what cost 1.8GB.
+Set config.PROXY_LABEL_TRAINING_WEIGHT to 1.0 and re-run to restore exactly the
+previous behaviour.
 
 Usage:
     python -m pipeline.demand_baseline
@@ -67,6 +86,7 @@ from config import (
     SERVICE_AVG_MINUTES,
     SNAPSHOT_WINDOW_HOURS,
     TARGET_DESK_UTILIZATION,
+    PROXY_LABEL_TRAINING_WEIGHT,
 )
 from pipeline.db import delete_samples_by_source, get_connection, init_db, insert_queue_samples, upsert_branch
 from pipeline.service_categories import categorize
@@ -249,13 +269,47 @@ def main() -> None:
     stored_baseline_rows = save_demand_baseline(demand_baseline, args.db)
     logger.info("Saved %d demand-baseline rows to historical_demand_baseline", stored_baseline_rows)
 
-    readings = derive_proxy_readings(frame)
+    # ----------------------------------------------------------------------
+    # Proxy label generation is gated on the SAME constant that controls their
+    # training weight, so the two can never disagree. With the labels retired
+    # (the default since 2026-08-01), generating ~6.9M rows nobody reads is
+    # pure waste: they dominate a 1.8GB SQLite file and are rebuilt on every
+    # pipeline run.
+    #
+    # The generator itself (`derive_proxy_readings`) is deliberately KEPT and
+    # still unit-tested. Code is cheap to retain and is what makes the
+    # retirement reversible; rows are what cost 1.8GB. Setting
+    # config.PROXY_LABEL_TRAINING_WEIGHT back to 1.0 and re-running this module
+    # restores the previous behaviour exactly.
+    #
+    # The stale-row deletion runs either way. That is the point: it is what
+    # stops a previous run's proxy rows lingering in queue_samples as orphaned
+    # state that training silently ignores but every ad-hoc query still picks up.
+    # ----------------------------------------------------------------------
     deleted = delete_samples_by_source(args.db, "historical_derived_proxy")
     if deleted:
-        logger.info("Deleted %d stale historical_derived_proxy rows from a prior run before re-inserting", deleted)
+        logger.info("Deleted %d historical_derived_proxy rows from a prior run", deleted)
+
+    # Branch registration is unrelated bookkeeping and must not hang off a
+    # retired code path — it used to sit inside the proxy-insert block purely
+    # because that block happened to open the connection.
     with get_connection(args.db) as connection:
         for branch in BRANCHES:
             upsert_branch(connection, branch.branch_id, branch.name, branch.district, branch.latitude, branch.longitude)
+
+    if PROXY_LABEL_TRAINING_WEIGHT <= 0:
+        logger.warning(
+            "SKIPPING proxy label generation — config.PROXY_LABEL_TRAINING_WEIGHT=%.3f. "
+            "The real demand-baseline feature above was still written; only the "
+            "formula-derived wait labels are retired. Set the constant to 1.0 to restore.",
+            PROXY_LABEL_TRAINING_WEIGHT,
+        )
+        if deleted:
+            logger.info("Run `VACUUM;` against %s to reclaim the freed space.", args.db)
+        return
+
+    readings = derive_proxy_readings(frame)
+    with get_connection(args.db) as connection:
         stored_readings = insert_queue_samples(connection, readings)
     logger.info("Inserted %d historical_derived_proxy rows into queue_samples", stored_readings)
 

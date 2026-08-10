@@ -94,6 +94,10 @@ def import_live_samples(csv_path: str = LIVE_SAMPLES_CSV_PATH, db_path: str = DE
                 source=row.source,
                 is_open=None if pd.isna(row.is_open) else bool(row.is_open),
                 raw_wait_time_minutes=raw,
+                # Present only in CSVs written by scrapers from 2026-08-05
+                # onward; older rows were padded with '' by the header
+                # migration and stay NULL rather than being invented.
+                **_optional_live_fields(row),
             )
         )
 
@@ -101,6 +105,29 @@ def import_live_samples(csv_path: str = LIVE_SAMPLES_CSV_PATH, db_path: str = DE
         imported = insert_queue_samples(connection, readings)
 
     return imported, skipped
+
+
+def _optional_live_fields(row) -> dict:
+    """Live-only columns added 2026-08-05, absent from earlier CSV rows.
+
+    Missing stays missing: the history genuinely was not captured, and a
+    back-filled guess would be indistinguishable from a real reading later.
+    """
+    def text(name: str) -> str | None:
+        value = getattr(row, name, None)
+        return None if value is None or pd.isna(value) or value == "" else str(value)
+
+    def number(name: str) -> float | None:
+        value = getattr(row, name, None)
+        return None if value is None or pd.isna(value) or value == "" else float(value)
+
+    web = getattr(row, "web_ticketing", None)
+    return {
+        "opening_hours": text("opening_hours"),
+        "service_state": text("service_state"),
+        "reported_service_minutes": number("reported_service_minutes"),
+        "web_ticketing": None if web is None or pd.isna(web) or web == "" else bool(web),
+    }
 
 
 def main() -> None:

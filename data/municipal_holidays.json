@@ -1,0 +1,1075 @@
+{
+  "branches": {
+    "loja_de_cidadao_da_batalha": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 14,
+      "name": "Batalha de Aljubarrota",
+      "municipality": "Batalha",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_penalva_do_castelo": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 25,
+      "name": "São Genésio",
+      "municipality": "Penalva Do Castelo",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_setubal": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 15,
+      "name": "Nascimento de Bocage",
+      "municipality": "Setúbal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2025
+      ]
+    },
+    "loja_de_cidadao_do_sardoal": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 22,
+      "name": "Elevação à categoria de vila",
+      "municipality": "Sardoal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_resende": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 29,
+      "name": "São Miguel Arcanjo",
+      "municipality": "Resende",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_tarouca": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 29,
+      "name": "São Miguel Arcanjo",
+      "municipality": "Tarouca",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_sao_joao_da_madeira": {
+      "kind": "fixed",
+      "month": 10,
+      "day": 11,
+      "name": "Elevação a cidade e fundação do município",
+      "municipality": "São João da Madeira",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2024
+      ]
+    },
+    "loja_de_cidadao_de_valpacos": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 6,
+      "name": "Criação do município",
+      "municipality": "Valpaços",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_rio_maior": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 6,
+      "name": "Criação do município",
+      "municipality": "Rio Maior",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_da_guarda": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 27,
+      "name": "Foral de D. Sancho I",
+      "municipality": "Guarda",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2023,
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_santarem": {
+      "kind": "fixed",
+      "month": 3,
+      "day": 19,
+      "name": "São José",
+      "municipality": "Santarém",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "loja_de_cidadao_de_murca": {
+      "kind": "fixed",
+      "month": 5,
+      "day": 8,
+      "name": "Fundação do município",
+      "municipality": "Murça",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "loja_de_cidadao_de_vila_pouca_aguiar": {
+      "month": 5,
+      "day": 16,
+      "years_observed": [
+        2024,
+        2025
+      ],
+      "municipality": "Vila Pouca De Aguiar",
+      "mean_national_open_rate": 0.986,
+      "derived_from": "IALC-M closure signature"
+    },
+    "loja_de_cidadao_de_leiria": {
+      "kind": "fixed",
+      "month": 5,
+      "day": 22,
+      "name": "Elevação a cidade e fundação da diocese",
+      "municipality": "Leiria",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025,
+        2026
+      ]
+    },
+    "loja_de_cidadao_de_alvaiazere": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Alvaiázere",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_vila_nova_de_famalicao": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Vila Nova De Famalicão",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_vila_real": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Vila Real",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_vila_nova_da_barquinha": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Vila Nova Da Barquinha",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_do_saldanha": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Lisboa",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_cascais": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Cascais",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_das_laranjeiras": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Lisboa",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_marvila": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Lisboa",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_amares": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 13,
+      "name": "Santo António",
+      "municipality": "Amares",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_braga": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Braga",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_tavira": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Tavira",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_castelo_de_paiva": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Castelo de Paiva",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_vila_nova_de_gaia": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Vila Nova De Gaia",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_valongo": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Valongo",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_nelas": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Nelas",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_do_porto": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 24,
+      "name": "São João Baptista",
+      "municipality": "Porto",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_coimbra": {
+      "kind": "fixed",
+      "month": 7,
+      "day": 4,
+      "name": "Rainha Santa Isabel",
+      "municipality": "Coimbra",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_santo_tirso": {
+      "kind": "fixed",
+      "month": 7,
+      "day": 11,
+      "name": "São Bento",
+      "municipality": "Santo Tirso",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_santiago_do_cacem": {
+      "kind": "fixed",
+      "month": 7,
+      "day": 25,
+      "name": "São Tiago",
+      "municipality": "Santiago Do Cacém",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_esmoriz": {
+      "kind": "fixed",
+      "month": 7,
+      "day": 25,
+      "name": "São Cristóvão",
+      "municipality": "Ovar",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_cantanhede": {
+      "kind": "fixed",
+      "month": 7,
+      "day": 25,
+      "name": "São Tiago",
+      "municipality": "Cantanhede",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_satao": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 20,
+      "name": "São Bernardo",
+      "municipality": "Sátão",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_vila_de_rei": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 19,
+      "name": "Recebimento do foral de D. Dinis",
+      "municipality": "Vila De Rei",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_oliveira_de_frades": {
+      "kind": "fixed",
+      "month": 10,
+      "day": 7,
+      "name": "Restauração do município",
+      "municipality": "Oliveira De Frades",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_pombal": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 11,
+      "name": "São Martinho",
+      "municipality": "Pombal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_penafiel": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 11,
+      "name": "São Martinho",
+      "municipality": "Penafiel",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_torres_vedras": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 11,
+      "name": "São Martinho",
+      "municipality": "Torres Vedras",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_meda": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 11,
+      "name": "São Martinho",
+      "municipality": "Mêda",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_odivelas": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 19,
+      "name": "Criação do município",
+      "municipality": "Odivelas",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2024,
+        2025
+      ]
+    },
+    "loja_de_cidadao_de_aguiar_da_beira": {
+      "kind": "fixed",
+      "month": 2,
+      "day": 10,
+      "name": "Restauração do concelho",
+      "municipality": "Aguiar Da Beira",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2025,
+        2026
+      ]
+    },
+    "loja_de_cidadao_de_aveiro": {
+      "kind": "fixed",
+      "month": 5,
+      "day": 12,
+      "name": "Santa Joana Princesa",
+      "municipality": "Aveiro",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0,
+      "years_observed": [
+        2025,
+        2026
+      ]
+    },
+    "loja_de_cidadao_da_anadia": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Anadia",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_abrantes": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 14,
+      "name": "Elevação a cidade",
+      "municipality": "Abrantes",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_alijo": {
+      "kind": "fixed",
+      "month": 11,
+      "day": 11,
+      "name": "São Martinho",
+      "municipality": "Alijó",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_ansiao": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Ansião",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_arruda_dos_vinhos": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Arruda Dos Vinhos",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_belmonte": {
+      "kind": "fixed",
+      "month": 4,
+      "day": 26,
+      "name": "Primeira missa no Brasil",
+      "municipality": "Belmonte",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_borba": {
+      "kind": "easter_offset",
+      "offset": 1,
+      "name": "Segunda-feira de Páscoa",
+      "municipality": "Borba",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_campo_maior": {
+      "kind": "easter_offset",
+      "offset": 1,
+      "name": "Segunda-feira de Páscoa",
+      "municipality": "Campo Maior",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_carregal_do_sal": {
+      "kind": "monday_after_nth_sunday",
+      "month": 7,
+      "nth": 3,
+      "name": "Nossa Senhora das Febres",
+      "municipality": "Carregal Do Sal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_faro": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 7,
+      "name": "Elevação a cidade",
+      "municipality": "Faro",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_felgueiras": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 29,
+      "name": "São Pedro",
+      "municipality": "Felgueiras",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_freixo_de_espada_a_cinta": {
+      "kind": "easter_offset",
+      "offset": 1,
+      "name": "Segunda-feira de Páscoa",
+      "municipality": "Freixo De Espada À Cinta",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_gondomar": {
+      "kind": "monday_after_nth_sunday",
+      "month": 10,
+      "nth": 1,
+      "name": "Nossa Senhora do Rosário",
+      "municipality": "Gondomar",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_mafra": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Mafra",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_macao": {
+      "kind": "easter_offset",
+      "offset": 1,
+      "name": "Segunda-feira de Páscoa",
+      "municipality": "Mação",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_montalegre": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 9,
+      "name": "Atribuição do foral",
+      "municipality": "Montalegre",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_palmela_movel": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 1,
+      "name": "Atribuição do foral manuelino",
+      "municipality": "Palmela",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_pinhal_novo": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 1,
+      "name": "Atribuição do foral manuelino (Palmela)",
+      "municipality": "Setúbal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_ponte_da_barca": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 24,
+      "name": "São Bartolomeu",
+      "municipality": "Ponte Da Barca",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_queluz": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 29,
+      "name": "São Pedro",
+      "municipality": "Sintra",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_ribeira_de_pena": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 16,
+      "name": "Nossa Senhora do Socorro",
+      "municipality": "Ribeira De Pena",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_torres_novas": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Torres Novas",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_vila_franca_de_xira": {
+      "kind": "easter_offset",
+      "offset": 39,
+      "name": "Quinta-feira da Ascensão / Dia da Espiga",
+      "municipality": "Vila Franca De Xira",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_vila_velha_de_rodao": {
+      "kind": "monday_after_nth_sunday",
+      "month": 8,
+      "nth": 4,
+      "name": "Nossa Senhora da Alagada",
+      "municipality": "Vila Velha De Ródão",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 3,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_viseu": {
+      "kind": "fixed",
+      "month": 9,
+      "day": 21,
+      "name": "São Mateus",
+      "municipality": "Viseu",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_de_agueda": {
+      "kind": "easter_offset",
+      "offset": 50,
+      "name": "Pentecostes (Festa de São Geraldo)",
+      "municipality": "Águeda",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 2,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_do_barreiro": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 28,
+      "name": "Elevação a cidade",
+      "municipality": "Barreiro",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_do_bombarral": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 29,
+      "name": "São Pedro",
+      "municipality": "Bombarral",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_do_cacem": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 29,
+      "name": "São Pedro",
+      "municipality": "Sintra",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_do_seixal": {
+      "kind": "fixed",
+      "month": 6,
+      "day": 29,
+      "name": "São Pedro",
+      "municipality": "Seixal",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 0,
+      "corpus_open_years": 0
+    },
+    "loja_de_cidadao_do_vimioso": {
+      "kind": "fixed",
+      "month": 8,
+      "day": 10,
+      "name": "São Lourenço",
+      "municipality": "Vimioso",
+      "derived_from": "published list, corpus-checked",
+      "corpus_closed_years": 1,
+      "corpus_open_years": 0
+    }
+  },
+  "undetermined_branches": [
+    "loja_de_cidadao_de_castelo_branco",
+    "loja_de_cidadao_de_serpa"
+  ],
+  "method": {
+    "source": "data/cleaned_ialc_baseline.parquet",
+    "seed": "data/municipal_holidays_seed.json",
+    "min_years": 2,
+    "min_weekday_presence_rate": 0.85,
+    "min_national_open_rate": 0.7,
+    "precedence": "corpus evidence overrides the seed list on any contradiction"
+  },
+  "reconciliation": {
+    "confirmed": [
+      "loja_de_cidadao_da_anadia",
+      "loja_de_cidadao_da_batalha",
+      "loja_de_cidadao_da_guarda",
+      "loja_de_cidadao_das_laranjeiras",
+      "loja_de_cidadao_de_abrantes",
+      "loja_de_cidadao_de_aguiar_da_beira",
+      "loja_de_cidadao_de_alvaiazere",
+      "loja_de_cidadao_de_amares",
+      "loja_de_cidadao_de_ansiao",
+      "loja_de_cidadao_de_arruda_dos_vinhos",
+      "loja_de_cidadao_de_aveiro",
+      "loja_de_cidadao_de_belmonte",
+      "loja_de_cidadao_de_borba",
+      "loja_de_cidadao_de_braga",
+      "loja_de_cidadao_de_campo_maior",
+      "loja_de_cidadao_de_cantanhede",
+      "loja_de_cidadao_de_carregal_do_sal",
+      "loja_de_cidadao_de_cascais",
+      "loja_de_cidadao_de_castelo_de_paiva",
+      "loja_de_cidadao_de_coimbra",
+      "loja_de_cidadao_de_esmoriz",
+      "loja_de_cidadao_de_faro",
+      "loja_de_cidadao_de_freixo_de_espada_a_cinta",
+      "loja_de_cidadao_de_gondomar",
+      "loja_de_cidadao_de_leiria",
+      "loja_de_cidadao_de_mafra",
+      "loja_de_cidadao_de_marvila",
+      "loja_de_cidadao_de_macao",
+      "loja_de_cidadao_de_montalegre",
+      "loja_de_cidadao_de_murca",
+      "loja_de_cidadao_de_meda",
+      "loja_de_cidadao_de_nelas",
+      "loja_de_cidadao_de_odivelas",
+      "loja_de_cidadao_de_oliveira_de_frades",
+      "loja_de_cidadao_de_palmela_movel",
+      "loja_de_cidadao_de_penafiel",
+      "loja_de_cidadao_de_penalva_do_castelo",
+      "loja_de_cidadao_de_pinhal_novo",
+      "loja_de_cidadao_de_pombal",
+      "loja_de_cidadao_de_ponte_da_barca",
+      "loja_de_cidadao_de_resende",
+      "loja_de_cidadao_de_rio_maior",
+      "loja_de_cidadao_de_santarem",
+      "loja_de_cidadao_de_santiago_do_cacem",
+      "loja_de_cidadao_de_santo_tirso",
+      "loja_de_cidadao_de_setubal",
+      "loja_de_cidadao_de_satao",
+      "loja_de_cidadao_de_sao_joao_da_madeira",
+      "loja_de_cidadao_de_tarouca",
+      "loja_de_cidadao_de_tavira",
+      "loja_de_cidadao_de_torres_novas",
+      "loja_de_cidadao_de_torres_vedras",
+      "loja_de_cidadao_de_valongo",
+      "loja_de_cidadao_de_valpacos",
+      "loja_de_cidadao_de_vila_franca_de_xira",
+      "loja_de_cidadao_de_vila_nova_da_barquinha",
+      "loja_de_cidadao_de_vila_nova_de_famalicao",
+      "loja_de_cidadao_de_vila_nova_de_gaia",
+      "loja_de_cidadao_de_vila_real",
+      "loja_de_cidadao_de_vila_velha_de_rodao",
+      "loja_de_cidadao_de_vila_de_rei",
+      "loja_de_cidadao_de_viseu",
+      "loja_de_cidadao_de_agueda",
+      "loja_de_cidadao_do_porto",
+      "loja_de_cidadao_do_saldanha",
+      "loja_de_cidadao_do_sardoal",
+      "loja_de_cidadao_do_vimioso"
+    ],
+    "added": [
+      "loja_de_cidadao_de_alijo",
+      "loja_de_cidadao_de_felgueiras",
+      "loja_de_cidadao_de_queluz",
+      "loja_de_cidadao_de_ribeira_de_pena",
+      "loja_de_cidadao_do_barreiro",
+      "loja_de_cidadao_do_bombarral",
+      "loja_de_cidadao_do_cacem",
+      "loja_de_cidadao_do_seixal"
+    ],
+    "contradicted": [
+      "loja_de_cidadao_de_castelo_branco (Nossa Senhora de Mércoles) open in 3 year(s)"
+    ],
+    "conflict": [
+      "loja_de_cidadao_de_vila_pouca_aguiar: derived 05-16 vs seed Atribuição do foral manuelino — keeping derived"
+    ]
+  },
+  "national_list_verification": {
+    "typical_rows_per_weekday": 72.0,
+    "observed_closed": [
+      "2023-08-15 Assunção de Nossa Senhora",
+      "2023-10-05 Implantação da República",
+      "2023-11-01 Todos os Santos",
+      "2023-12-01 Restauração da Independência",
+      "2023-12-08 Imaculada Conceição",
+      "2023-12-25 Natal",
+      "2024-01-01 Ano Novo",
+      "2024-02-13 Carnaval",
+      "2024-03-29 Sexta-feira Santa",
+      "2024-04-25 Dia da Liberdade",
+      "2024-05-01 Dia do Trabalhador",
+      "2024-05-30 Corpo de Deus",
+      "2024-06-10 Dia de Portugal",
+      "2024-08-15 Assunção de Nossa Senhora",
+      "2024-11-01 Todos os Santos",
+      "2024-12-25 Natal",
+      "2025-01-01 Ano Novo",
+      "2025-03-04 Carnaval",
+      "2025-04-18 Sexta-feira Santa",
+      "2025-04-25 Dia da Liberdade",
+      "2025-05-01 Dia do Trabalhador",
+      "2025-06-10 Dia de Portugal",
+      "2025-06-19 Corpo de Deus",
+      "2025-08-15 Assunção de Nossa Senhora",
+      "2025-12-01 Restauração da Independência",
+      "2025-12-08 Imaculada Conceição",
+      "2025-12-25 Natal",
+      "2026-01-01 Ano Novo",
+      "2026-02-17 Carnaval",
+      "2026-04-03 Sexta-feira Santa",
+      "2026-05-01 Dia do Trabalhador",
+      "2026-06-04 Corpo de Deus",
+      "2026-06-10 Dia de Portugal"
+    ],
+    "observed_open": []
+  }
+}

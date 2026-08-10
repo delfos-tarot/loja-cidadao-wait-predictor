@@ -1,0 +1,15 @@
+# live_samples.csv is APPEND-ONLY: every scraper run adds rows at the end and
+# never edits existing ones. When two runs overlap (a scheduled slot firing
+# late while a watchdog dispatch is mid-run), git sees two sets of additions at
+# the same place and calls it a conflict — but there is no real conflict, both
+# sets of rows are wanted.
+#
+# `merge=union` keeps BOTH sides' lines instead of failing. Measured before
+# this was added: 13 of 200 runs (6%) died on
+# "CONFLICT (content): Merge conflict in data/live_samples.csv", losing that
+# sweep's data entirely, and the losses clustered — 4 failures on 2026-08-06
+# cut collection short at 16:01 instead of ~19:00.
+#
+# Duplicate rows are harmless: pipeline/import_live_samples.py dedupes on
+# (branch_id, desk_service_id, sampled_at, source) before inserting.
+data/live_samples.csv merge=union
