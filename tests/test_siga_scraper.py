@@ -194,3 +194,43 @@ def test_missing_optional_fields_degrade_to_none() -> None:
     assert reading.reported_service_minutes is None
     assert reading.web_ticketing is None
     assert reading.people_waiting == 3
+
+
+def test_csv_fields_all_exist_on_the_reading_dataclass() -> None:
+    """CSV_FIELDS and QueueReading must not drift apart. `sampled_at` is the
+    only field needing conversion; every other column must be a real attribute
+    or the row builder writes a blank."""
+    import dataclasses
+    from scrapers.siga_scraper import CSV_FIELDS
+
+    attributes = {f.name for f in dataclasses.fields(QueueReading)}
+    missing = [c for c in CSV_FIELDS if c not in attributes]
+    assert not missing, f"CSV columns with no matching QueueReading field: {missing}"
+
+
+def test_csv_row_populates_every_declared_field(tmp_path) -> None:
+    """The regression guard for the 2026-08-18 bug: CSV_FIELDS gained four
+    columns, the row dict was a hand-written literal that did not, and
+    DictWriter filled the difference with '' — silently, for 8 days and
+    ~120,000 readings, while the header looked perfectly correct."""
+    import csv as csv_module
+    from datetime import datetime, timezone
+    from scrapers.siga_scraper import CSV_FIELDS, append_readings_to_csv
+
+    reading = QueueReading(
+        branch_id="b", desk_service_id="s",
+        sampled_at=datetime(2026, 8, 18, 10, 0, tzinfo=timezone.utc),
+        people_waiting=3, last_ticket_called="A12", estimated_wait_minutes=12.0,
+        source="siga_live", is_open=True, raw_wait_time_minutes=12.0,
+        opening_hours="09:00 - 12:30", service_state="SENHA MANUAL",
+        reported_service_minutes=8.0, web_ticketing=False,
+    )
+    path = tmp_path / "live.csv"
+    append_readings_to_csv([reading], str(path))
+
+    row = next(iter(csv_module.DictReader(path.open())))
+    assert set(row) == set(CSV_FIELDS)
+    blank = [k for k, v in row.items() if v == ""]
+    assert not blank, f"declared CSV columns written blank: {blank}"
+    assert row["opening_hours"] == "09:00 - 12:30"
+    assert row["reported_service_minutes"] == "8.0"

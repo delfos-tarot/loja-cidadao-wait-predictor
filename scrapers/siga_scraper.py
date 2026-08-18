@@ -232,17 +232,21 @@ def append_readings_to_csv(readings: list[QueueReading], csv_path: str = LIVE_SA
         if not file_exists:
             writer.writeheader()
         for reading in readings:
+            # Built FROM CSV_FIELDS, never a hand-written dict. Found
+            # 2026-08-18: the four fields added on 2026-08-05 were appended to
+            # CSV_FIELDS (so the header gained them) but the row dict below was
+            # a literal that nobody updated, so DictWriter silently filled them
+            # with '' via restval. Eight days and ~120,000 readings were
+            # collected with every new column blank, and nothing failed --
+            # the header looked correct the whole time.
+            # Driving both from one list makes that drift structurally
+            # impossible; test_csv_row_populates_every_declared_field guards it.
             writer.writerow(
                 {
-                    "branch_id": reading.branch_id,
-                    "desk_service_id": reading.desk_service_id,
-                    "sampled_at": reading.sampled_at.isoformat(),
-                    "people_waiting": reading.people_waiting,
-                    "last_ticket_called": reading.last_ticket_called,
-                    "estimated_wait_minutes": reading.estimated_wait_minutes,
-                    "source": reading.source,
-                    "is_open": reading.is_open,
-                    "raw_wait_time_minutes": reading.raw_wait_time_minutes,
+                    field: reading.sampled_at.isoformat()
+                    if field == "sampled_at"
+                    else getattr(reading, field)
+                    for field in CSV_FIELDS
                 }
             )
     return len(readings)
